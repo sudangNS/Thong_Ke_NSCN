@@ -8,22 +8,48 @@
   <link rel="stylesheet" href="style.css">
   <style id="page-size">@page { size: A5 landscape; margin: 0; }</style>
 </head>
-<body>
+<body data-tab="san-luong">
   <div id="app">
     <div class="sticky-top">
       <header class="topbar">
         <img class="brand-logo" src="assets/logo.png" alt="Nghĩa Sơn">
         <div class="brand-text">
           <h1>Thống kê – Nghĩa Sơn Chi Nhánh</h1>
-          <p>Lệnh sản xuất đang chạy · phiếu pallet · <a class="powered" href="https://dangquocsu.id.vn" target="_blank" rel="noopener">Powered by Đặng Quốc Sự</a></p>
+          <p>Xưởng 1 · báo cáo sản lượng · phiếu sản xuất · <a class="powered" href="https://dangquocsu.id.vn" target="_blank" rel="noopener">Powered by Đặng Quốc Sự</a></p>
         </div>
         <div class="sync">
+          <span id="me" class="me"></span>
           <span id="sync-status" class="sync-status">Đang tải dữ liệu…</span>
           <button id="btn-refresh" class="btn btn-light" type="button" title="Đọc lại dữ liệu mới nhất từ Google Sheet">⟳ Làm mới</button>
         </div>
       </header>
+      <nav id="tabs" class="tabs" aria-label="Chức năng"></nav>
 
-      <section class="filters" aria-label="Tìm kiếm và lọc">
+      <section class="rp-bar" data-tab="san-luong" aria-label="Kỳ báo cáo">
+        <div id="rp-mode" class="seg" role="group" aria-label="Kỳ">
+          <button type="button" data-mode="day">Ngày</button>
+          <button type="button" data-mode="week">Tuần</button>
+          <button type="button" data-mode="month">Tháng</button>
+          <button type="button" data-mode="custom">Tuỳ chỉnh</button>
+        </div>
+        <div class="rp-nav">
+          <button id="rp-prev" class="btn" type="button" title="Kỳ trước">‹</button>
+          <b id="rp-label"></b>
+          <button id="rp-next" class="btn" type="button" title="Kỳ sau">›</button>
+          <button id="rp-today" class="btn btn-ghost" type="button">Hôm nay</button>
+        </div>
+        <input id="rp-date" type="date" aria-label="Chọn ngày">
+        <span id="rp-custom" class="rp-custom" hidden>Từ <input id="rp-from" type="date"> đến <input id="rp-to" type="date"></span>
+        <span class="spacer"></span>
+        <label class="rp-m3">Quy đổi
+          <select id="rp-m3">
+            <option value="f">m³ tinh (BOM)</option>
+            <option value="r">m³ phôi sơ chế</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="filters" data-tab="phieu" aria-label="Tìm kiếm và lọc">
         <div class="search-row">
           <div class="search">
             <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -51,7 +77,7 @@
       </section>
     </div>
 
-    <div class="legend" aria-hidden="true">
+    <div class="legend" data-tab="phieu" aria-hidden="true">
       <span><i class="lg lg-mo"></i>Lệnh sản xuất</span>
       <span><i class="lg lg-det"></i>Sản phẩm</span>
       <span><i class="lg lg-cum"></i>Cụm</span>
@@ -61,16 +87,19 @@
       <span><i class="dot dot-doing"></i>Đang làm</span>
       <span><i class="dot dot-done"></i>Hoàn thành</span>
       <span><i class="dot dot-sel"></i>Đã chọn in</span>
+      <span><i class="dot dot-inf"></i>≥ suy ra từ công đoạn sau</span>
     </div>
 
-    <main id="tree" class="tree" aria-live="polite"></main>
+    <main id="tree" class="tree" data-tab="phieu" aria-live="polite"></main>
+    <main id="report" class="report" data-tab="san-luong" aria-live="polite"><div class="empty">Đang tải dữ liệu…</div></main>
+    <main id="audit" class="report" data-tab="kiem-tra"></main>
 
     <footer class="credit">
       © <span id="year">2026</span> Nghĩa Sơn Chi Nhánh · Powered by
       <a href="https://dangquocsu.id.vn" target="_blank" rel="noopener">Đặng Quốc Sự</a>
     </footer>
 
-    <div id="selbar" class="selbar" hidden>
+    <div id="selbar" class="selbar" data-tab="phieu" hidden>
       <span><b id="sel-count">0</b> phiếu đã chọn</span>
       <span class="spacer"></span>
       <button id="btn-sel-clear" class="btn btn-ghost" type="button">Bỏ chọn</button>
@@ -104,6 +133,10 @@
   </div>
 
   <script src="vendor/qrcode.js"></script>
+  <div id="tip" class="tip" role="tooltip" hidden></div>
+
   <script src="app.js"></script>
+  <script src="production.js"></script>
+  <script src="report.js"></script>
 </body>
 </html>

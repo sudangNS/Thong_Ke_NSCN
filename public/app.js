@@ -8,6 +8,7 @@ const GIDS = {
   mo_detail: '1681627449',
   product: '151523159',
   bom_wood: '1862351213',
+  pallet_log: '2066587219', // ghi nhận sản lượng theo ngày (work_date, mo_route_id, qty)
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const LOG_ROWS = 7; // số dòng ghi nhận trên phiếu (theo mẫu)
@@ -94,6 +95,8 @@ async function load(force = false) {
     const data = {};
     names.forEach((n, i) => { data[n] = parseCSV(res[i].text); });
     build(data);
+    runProduction(data);
+    recount();
     const rt = res[0];
     S.fetchedAt = Math.min(...res.map((r) => r.fetchedAt));
     S.mode = rt.cache === 'DIRECT' ? 'direct' : 'proxy';
@@ -103,12 +106,17 @@ async function load(force = false) {
     fillFilters();
     if (!S.urlApplied) applyUrlParams();
     update();
+    renderReport();
     updateSync();
     if (S.pendingPreview) { const ids = S.pendingPreview.filter((id) => S.steps.has(id)); S.pendingPreview = null; if (ids.length) openPreview(ids); }
   } catch (e) {
     console.error(e);
     setSync(`Lỗi tải dữ liệu: ${e.message}`, 'err');
-    if (!S.mos.length) $('#tree').innerHTML = `<div class="empty">Không tải được dữ liệu.<br><small>${esc(e.message)}</small></div>`;
+    if (!S.mos.length) {
+      const msg = `<div class="empty">Không tải được dữ liệu.<br><small>${esc(e.message)}</small></div>`;
+      $('#tree').innerHTML = msg;
+      $('#report').innerHTML = msg;
+    }
   } finally {
     S.loading = false;
   }
@@ -161,6 +169,7 @@ function build(d) {
         name: x.product_name || p.product_name || r.product_id, nameVi: p.product_name_vi || '',
         code: x.product_code || p.product_code || '', bomCode: p.bom_product_code || '',
         qty: num(x.qty) || num(r.mo_qty), unit: x.unit || p.unit || '', due: x.due_date || mo.due,
+        m3pcs: num(x.m3_per_pcs) || num(p.m3_per_pcs),
         size: p.size || '', wood: p.wood_type || '', color: p.color_code || '',
         setName: set ? (set.product_name_vi || set.product_name) : '', parts: [], total: 0, done: 0,
       };
@@ -177,6 +186,7 @@ function build(d) {
         lineNo: num(r.line_no), code: b.part_code || '',
         size: dims.some(Boolean) ? dims.map((v) => v || '?').join(' × ') : (r.part_kind === 'SP' ? det.size : ''),
         material: b.material || '', qtyPer: num(r.qty_per_unit), qtyReq: num(r.qty_required), steps: [],
+        bomQty: num(b.qty_per_unit), m3FinishLine: num(b.m3_finish), m3RoughLine: num(b.m3_rough),
       };
       parts.set(part.ref, part);
       det.parts.push(part);
@@ -186,6 +196,7 @@ function build(d) {
       prev: r.prev_stage, next: r.next_stage, qtyReq: num(r.qty_required), qtyDone: num(r.qty_done), status: r.status || '',
     };
     st.done = isDone(st.status, st.qtyDone, st.qtyReq);
+    st.rep = st.eff = st.qtyDone; // runProduction() cập nhật lại từ Pallet Log
     part.steps.push(st);
     steps.set(st.id, st);
   }
@@ -197,14 +208,12 @@ function build(d) {
     p.cumName = p.kind === 'SP' || p.kind === 'CT rời' ? '' : (cum ? cum.name : '');
     p.cumCode = cum ? cum.code : '';
     p.search = norm([p.ref, p.name, p.code, p.cumName, p.cumCode, KIND_LABEL[p.kind]].join(' '));
-    for (const s of p.steps) { p.det.total++; p.det.mo.total++; if (s.done) { p.det.done++; p.det.mo.done++; } }
   }
 
   let seq = 0;
   const kindRank = { SP: 0, CUM: 1, 'CT thuộc cụm': 1, 'CT rời': 2 };
   S.mos = [...mos.values()].sort((a, b) => a.no.localeCompare(b.no, 'vi', { numeric: true }));
   for (const mo of S.mos) {
-    mo.running = mo.done < mo.total;
     mo.details.sort((a, b) => (num(a.stt) - num(b.stt)) || a.id.localeCompare(b.id));
     for (const det of mo.details) {
       det.parts.sort((a, b) => (kindRank[a.kind] - kindRank[b.kind]) || (a.lineNo - b.lineNo));
@@ -212,6 +221,20 @@ function build(d) {
     }
   }
   S.steps = steps;
+}
+
+// Tiến độ LSX / dòng SP (gọi sau runProduction vì "hoàn thành" tính theo số đã suy diễn)
+function recount() {
+  for (const mo of S.mos) {
+    mo.total = mo.done = 0;
+    for (const det of mo.details) {
+      det.total = det.done = 0;
+      for (const p of det.parts) for (const s of p.steps) { det.total++; if (s.done) det.done++; }
+      mo.total += det.total; mo.done += det.done;
+      det.sync = detSync(det);
+    }
+    mo.running = mo.done < mo.total;
+  }
 }
 
 /* ---------- Bộ lọc ---------- */
@@ -388,8 +411,25 @@ function renderDet(vd) {
       ${progress(d.done, d.total)}
       ${scopeBtn(`d:${d.id}`)}
     </div>
+    ${syncBar(d)}
     ${open ? `<div class="det-body">${vd.groupList.map((g) => renderGroup(g, d)).join('')}</div>` : ''}
   </div>`;
+}
+
+const fmtQ = (n) => fmt(Math.round(Number(n) || 0));
+
+// Đồng bộ chi tiết: đủ bộ cho bao nhiêu SP ở từng mốc (lấy chi tiết/cụm thiếu nhất)
+function syncBar(d) {
+  const sy = d.sync || {};
+  const chips = SYNC_KEYS.filter(([k]) => sy[k]).map(([k, label, desc]) => {
+    const x = sy[k], p = d.qty ? Math.min(100, Math.round((x.v / d.qty) * 100)) : 0;
+    const cls = x.v <= 0 ? 'zero' : x.v >= d.qty ? 'full' : '';
+    const tip = `Đồng bộ ${desc}: đủ cho ${fmt(x.v)}/${fmt(d.qty)} SP` +
+      (x.v < d.qty ? `\nThiếu nhất: ${x.by} – có ${fmtQ(x.have)}, cần ${fmt(x.need)}/SP` : '');
+    return `<span class="sync-chip ${cls}" title="${esc(tip)}"><b>${label}</b> ${fmt(x.v)}<i style="width:${p}%"></i></span>`;
+  });
+  if (!chips.length) return '';
+  return `<div class="sync-bar"><span class="sync-lbl" title="Số SP đủ bộ chi tiết ở từng mốc (đã tính SL chi tiết/SP)">Đồng bộ / ${fmt(d.qty)} SP:</span>${chips.join('')}</div>`;
 }
 
 function renderGroup(g, d) {
@@ -408,9 +448,11 @@ function renderGroup(g, d) {
 
 function renderPart({ p, steps }) {
   const chips = steps.map((s) => {
-    const cls = ['step', S.selected.has(s.id) ? 'sel' : '', s.done ? 'done' : s.qtyDone > 0 ? 'doing' : ''].join(' ');
-    return `<button type="button" class="${cls}" data-step="${esc(s.id)}" title="${esc(s.id)} · ${esc(s.group)} · ${esc(s.status)}">
-      <span class="sn">${s.no}</span>${esc(s.stage)}<small>${fmt(s.qtyDone)}/${fmt(s.qtyReq)}</small></button>`;
+    const inferred = s.eff > s.rep + 1e-9;
+    const cls = ['step', S.selected.has(s.id) ? 'sel' : '', s.done ? 'done' : s.eff > 0 ? 'doing' : '', inferred ? 'inf' : ''].join(' ');
+    const tip = `${s.id} · ${s.group} · ${s.status}\nĐã báo: ${fmtQ(s.rep)}` + (inferred ? ` · suy ra từ công đoạn sau: ${fmtQ(s.eff)}` : '');
+    return `<button type="button" class="${cls}" data-step="${esc(s.id)}" title="${esc(tip)}">
+      <span class="sn">${s.no}</span>${esc(s.stage)}<small>${inferred ? '≥' : ''}${fmtQ(s.eff)}/${fmt(s.qtyReq)}</small></button>`;
   }).join('');
   return `<div class="part kind-${p.kind === 'CUM' ? 'cum' : p.kind === 'SP' ? 'sp' : 'ct'}">
     <div class="part-info">
@@ -550,11 +592,68 @@ function applyUrlParams() {
   if (u.has('phieu')) S.pendingPreview = u.get('phieu').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 }
 
+/* ---------- Menu tab & phân quyền ----------
+ * Mỗi tab gắn 1 quyền. Quyền lấy từ /api/me (Cloudflare Access + biến PERMS).
+ * Ẩn tab chỉ là giao diện; chức năng ghi/sửa dữ liệu phải kiểm quyền lại ở server. */
+const TABS = [
+  { id: 'san-luong', label: 'Báo cáo sản lượng', perm: 'report' },
+  { id: 'phieu', label: 'Phiếu sản xuất', perm: 'phieu' },
+  { id: 'kiem-tra', label: 'Kiểm tra dữ liệu', perm: 'audit', soon: true },
+];
+S.perms = new Set(['*']);
+S.tab = '';
+S.sub = '';
+const can = (perm) => S.perms.has('*') || S.perms.has(perm);
+
+async function loadMe() {
+  try {
+    const r = await fetch('api/me', { cache: 'no-store' });
+    if (r.ok && (r.headers.get('content-type') || '').includes('json')) {
+      const me = await r.json();
+      S.me = me;
+      S.perms = new Set(me.perms || []);
+      if (me.email) $('#me').textContent = me.email;
+    }
+  } catch { /* chạy local không có Function → đủ quyền */ }
+}
+
+function renderTabs() {
+  $('#tabs').innerHTML = TABS.filter((t) => can(t.perm)).map((t) =>
+    `<a class="tab ${S.tab === t.id ? 'on' : ''}" href="#/${t.id}">${esc(t.label)}${t.soon ? ' <small>sắp có</small>' : ''}</a>`).join('');
+}
+
+function route() {
+  const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
+  const [tab, ...rest] = path.split('/');
+  if (query) rpFromQuery(new URLSearchParams(query));
+  const allowed = TABS.filter((t) => can(t.perm));
+  let t = allowed.find((x) => x.id === tab);
+  if (!t) {
+    // Link chia sẻ cũ (?q=…&phieu=…) mở thẳng tab phiếu
+    const legacy = ['q', 'mo', 'phieu', 'stage', 'group', 'product'].some((k) => new URLSearchParams(location.search).has(k));
+    t = (legacy && allowed.find((x) => x.id === 'phieu')) || allowed[0];
+  }
+  S.tab = t ? t.id : '';
+  S.sub = rest.map(decodeURIComponent).join('/');
+  document.body.dataset.tab = S.tab;
+  renderTabs();
+  if (S.tab === 'san-luong') renderReport();
+  if (S.tab === 'kiem-tra') {
+    $('#audit').innerHTML = `<div class="empty"><b>Kiểm tra &amp; đối chiếu dữ liệu</b><br>
+      Đang đánh giá phương án (xem docs/Draft/DE_XUAT_KIEM_TRA_DU_LIEU.md). Chức năng sẽ bật sau khi duyệt.</div>`;
+  }
+  if (!t) $('#report').innerHTML = '<div class="empty">Tài khoản chưa được cấp quyền xem mục nào.</div>';
+}
+
 /* ---------- Sự kiện ---------- */
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
-function init() {
+async function init() {
   $('#year').textContent = new Date().getFullYear();
+  initReport();
+  window.addEventListener('hashchange', route);
+  await loadMe();
+  route();
   try {
     const p = localStorage.getItem('nscn.paper'); if (p) $('#pv-paper').value = p;
     const s = localStorage.getItem('nscn.sort'); if (s) $('#pv-sort').value = s;
@@ -618,4 +717,5 @@ function init() {
   load(false);
 }
 
-init();
+// Chạy sau khi mọi script (production.js, report.js) đã nạp
+document.addEventListener('DOMContentLoaded', init);

@@ -5,20 +5,47 @@ Web nội bộ cho bộ phận thống kê: xem lệnh sản xuất (LSX) đang 
 (mẫu: [docs/mau/phieu-pallet-mau.png](docs/mau/phieu-pallet-mau.png)) có **QR = MO Routing ID**.
 
 Nguồn dữ liệu: Google Sheet `1VVW7Zrdw-KmO2HLIh1nchKE8DRGWDtd2hCrS-e_aKUU`, gồm các tab
-MO Routing, MO, MO Detail, Product, BOM Wood.
+MO Routing, MO, MO Detail, Product, BOM Wood, Pallet Log.
 
 ## Cấu trúc
 
 ```
 public/                 web tĩnh (không cần build)
-  index.html, app.js, style.css
+  index.html, style.css
+  app.js                tải dữ liệu, menu tab/phân quyền, tab Phiếu sản xuất
+  production.js         suy diễn công đoạn bị bỏ qua, sản lượng theo ngày, đồng bộ chi tiết
+  report.js             tab Báo cáo sản lượng
   assets/logo.png
   vendor/qrcode.js      qrcode-generator 1.4.4 (MIT), lưu cục bộ để in được cả khi CDN lỗi
 functions/api/sheet/[name].js   Cloudflare Pages Function: proxy + cache Google Sheet
+functions/api/me.js             email + quyền người dùng (Cloudflare Access + PERMS)
 docs/DANH_GIA_GIOI_HAN.md       đánh giá giới hạn Google/Cloudflare & cơ chế làm mới
 ```
 
 ## Chức năng
+
+Menu tab (theo quyền): **Báo cáo sản lượng** · **Phiếu sản xuất** · **Kiểm tra dữ liệu** (đang đánh giá –
+[docs/Draft/DE_XUAT_KIEM_TRA_DU_LIEU.md](docs/Draft/DE_XUAT_KIEM_TRA_DU_LIEU.md)).
+
+### Báo cáo sản lượng (Xưởng 1)
+
+- Màn hình chính: **Tổng xưởng 1** (thành phẩm đóng gói, m³, so sánh m³ ra khỏi 5 tổ) + **5 thẻ tổ**
+  Sơ chế, Tinh chế, Lắp ráp, Dầu, Bao bì (m³, số chi tiết/cụm/SP, biểu đồ theo ngày, số lượng từng công đoạn).
+- Bấm thẻ → chi tiết tổ: bảng công đoạn × ngày (cột *Đã báo* / *Suy ra*), bảng theo LSX · sản phẩm → từng chi tiết.
+- Kỳ: Ngày / Tuần / Tháng / Tuỳ chỉnh; m³ tinh (BOM `m3_finish`) hoặc m³ phôi (`m3_rough`).
+  Link giữ kỳ đang xem: `#/san-luong/Sơ chế?k=week&d=2026-11-12`.
+- Nguồn: tab **Pallet Log**. Công đoạn bị bỏ qua được tính bằng số của công đoạn sau; cụm/SP đã ráp thì
+  chi tiết bên trong tính đã xong (xem [public/production.js](public/production.js)).
+- **Đồng bộ chi tiết** trên mỗi dòng SP (tab Phiếu & báo cáo): số SP đủ bộ ở các mốc Phôi SC, TC, CT xong,
+  Cụm, Ráp TP, Đóng gói = min(số đã xong ÷ SL chi tiết/SP).
+
+### Phân quyền
+
+`GET /api/me` trả email (Cloudflare Access) và quyền theo biến `PERMS` (JSON, tra email → `@tên-miền` → `*`):
+`{"sudang@nghiason.com.vn":["*"],"@nghiason.com.vn":["report","phieu"]}`. Chưa đặt `PERMS` → mọi người đủ quyền.
+Quyền: `report`, `phieu`, `audit`. Ẩn tab chỉ là giao diện – API ghi dữ liệu sau này phải kiểm quyền ở server.
+
+### Phiếu sản xuất
 
 - **Tìm kiếm** không dấu theo LSX, khách hàng, tên/mã sản phẩm, cụm, chi tiết, mã chi tiết.
   Quét QR vào ô tìm kiếm rồi Enter → mở ngay phiếu đó.

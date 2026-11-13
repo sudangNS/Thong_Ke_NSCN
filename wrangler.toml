@@ -12,3 +12,6 @@ SHEET_ID = "1VVW7Zrdw-KmO2HLIh1nchKE8DRGWDtd2hCrS-e_aKUU"
 # [[kv_namespaces]]
 # binding = "SHEET_CACHE"
 # id = "<kv-namespace-id>"
+
+# Phân quyền (đặt trong Dashboard → Settings → Variables, kiểu JSON). Chưa đặt = mọi người đủ quyền.
+# PERMS = '{"sudang@nghiason.com.vn":["*"],"@nghiason.com.vn":["report","phieu"]}'
