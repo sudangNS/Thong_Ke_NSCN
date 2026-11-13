@@ -321,7 +321,11 @@ function isOpen(key) {
 }
 
 /* ---------- Render ---------- */
-function update() { compute(); render(); }
+function update() {
+  F_IDS.forEach((id) => { const el = $('#' + id); el.classList.toggle('on', Boolean(el.value)); });
+  compute();
+  render();
+}
 
 function scopeBtn(key, label) {
   const ids = S.scopes.get(key) || [];
@@ -376,7 +380,7 @@ function renderDet(vd) {
       <span class="det-stt" title="${esc(d.id)}">${d.stt ? 'Dòng ' + esc(d.stt) : ''} <small>#${esc(d.id.split('-').pop())}</small></span>
       <span class="det-name" title="${esc(d.nameVi)}">${esc(d.name)}</span>
       ${d.code ? `<span class="code">${esc(d.code)}</span>` : ''}
-      ${d.setName ? `<span class="tag tag-set" title="Thuộc bộ sản phẩm">${esc(/^bộ\b/i.test(d.setName) ? d.setName : 'Bộ ' + d.setName)}</span>` : ''}
+      ${d.setName ? `<span class="tag tag-set" title="Thuộc bộ sản phẩm">${esc(/^bộ\s/i.test(d.setName) ? d.setName : 'Bộ ' + d.setName)}</span>` : ''}
       <span class="meta">SL ${fmt(d.qty)} ${esc(d.unit)}</span>
       ${d.size ? `<span class="meta">${esc(d.size)}</span>` : ''}
       ${d.due ? `<span class="meta">Hạn ${fmtDate(d.due)}</span>` : ''}
@@ -550,6 +554,7 @@ function applyUrlParams() {
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 function init() {
+  $('#year').textContent = new Date().getFullYear();
   try {
     const p = localStorage.getItem('nscn.paper'); if (p) $('#pv-paper').value = p;
     const s = localStorage.getItem('nscn.sort'); if (s) $('#pv-sort').value = s;

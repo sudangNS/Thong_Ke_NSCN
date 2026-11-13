@@ -10,43 +10,65 @@
 </head>
 <body>
   <div id="app">
-    <header class="topbar">
-      <img class="brand-logo" src="assets/logo.png" alt="Nghĩa Sơn">
-      <div class="brand-text">
-        <h1>Thống kê – Nghĩa Sơn Chi Nhánh</h1>
-        <p>Lệnh sản xuất đang chạy · sản phẩm · cụm · chi tiết · phiếu pallet</p>
-      </div>
-      <div class="sync">
-        <span id="sync-status" class="sync-status">Đang tải dữ liệu…</span>
-        <button id="btn-refresh" class="btn" type="button" title="Đọc lại dữ liệu mới nhất từ Google Sheet">⟳ Làm mới</button>
-      </div>
-    </header>
+    <div class="sticky-top">
+      <header class="topbar">
+        <img class="brand-logo" src="assets/logo.png" alt="Nghĩa Sơn">
+        <div class="brand-text">
+          <h1>Thống kê – Nghĩa Sơn Chi Nhánh</h1>
+          <p>Lệnh sản xuất đang chạy · phiếu pallet · <a class="powered" href="https://dangquocsu.id.vn" target="_blank" rel="noopener">Powered by Đặng Quốc Sự</a></p>
+        </div>
+        <div class="sync">
+          <span id="sync-status" class="sync-status">Đang tải dữ liệu…</span>
+          <button id="btn-refresh" class="btn btn-light" type="button" title="Đọc lại dữ liệu mới nhất từ Google Sheet">⟳ Làm mới</button>
+        </div>
+      </header>
 
-    <section class="filters" aria-label="Tìm kiếm và lọc">
-      <div class="search">
-        <input id="q" type="search" placeholder="Tìm LSX, sản phẩm, mã SP, cụm, chi tiết, mã phiếu (quét QR)…" autocomplete="off">
-      </div>
-      <div class="filter-row">
-        <label>LSX <select id="f-mo"></select></label>
-        <label>Khách hàng <select id="f-customer"></select></label>
-        <label>Sản phẩm <select id="f-product"></select></label>
-        <label>Loại <select id="f-kind"></select></label>
-        <label>Nhóm CĐ <select id="f-group"></select></label>
-        <label>Công đoạn <select id="f-stage"></select></label>
-        <label>Trạng thái <select id="f-status"></select></label>
-        <label class="chk"><input id="f-running" type="checkbox" checked> Chỉ LSX đang chạy</label>
-        <button id="btn-clear" class="btn btn-ghost" type="button">Xoá lọc</button>
-      </div>
-      <div class="result-row">
-        <span id="result-count"></span>
-        <span class="spacer"></span>
-        <button id="btn-expand" class="btn btn-ghost" type="button">Mở tất cả</button>
-        <button id="btn-collapse" class="btn btn-ghost" type="button">Thu gọn</button>
-        <button id="btn-select-all" class="btn" type="button">Chọn tất cả phiếu đang lọc</button>
-      </div>
-    </section>
+      <section class="filters" aria-label="Tìm kiếm và lọc">
+        <div class="search-row">
+          <div class="search">
+            <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="q" type="search" placeholder="Tìm LSX, sản phẩm, mã SP, cụm, chi tiết, mã phiếu (quét QR)…" autocomplete="off">
+          </div>
+          <label class="chk"><input id="f-running" type="checkbox" checked> Chỉ LSX đang chạy</label>
+          <button id="btn-clear" class="btn" type="button">✕ Xoá lọc</button>
+        </div>
+        <div class="filter-grid">
+          <label><span>Lệnh sản xuất</span><select id="f-mo"></select></label>
+          <label><span>Khách hàng</span><select id="f-customer"></select></label>
+          <label><span>Sản phẩm</span><select id="f-product"></select></label>
+          <label><span>Loại</span><select id="f-kind"></select></label>
+          <label><span>Tổ (nhóm CĐ)</span><select id="f-group"></select></label>
+          <label><span>Công đoạn</span><select id="f-stage"></select></label>
+          <label><span>Trạng thái</span><select id="f-status"></select></label>
+        </div>
+        <div class="result-row">
+          <span id="result-count"></span>
+          <span class="spacer"></span>
+          <button id="btn-expand" class="btn btn-ghost" type="button">⊞ Mở tất cả</button>
+          <button id="btn-collapse" class="btn btn-ghost" type="button">⊟ Thu gọn</button>
+          <button id="btn-select-all" class="btn btn-outline" type="button">Chọn tất cả phiếu đang lọc</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="legend" aria-hidden="true">
+      <span><i class="lg lg-mo"></i>Lệnh sản xuất</span>
+      <span><i class="lg lg-det"></i>Sản phẩm</span>
+      <span><i class="lg lg-cum"></i>Cụm</span>
+      <span><i class="lg lg-ct"></i>Chi tiết</span>
+      <span class="legend-sep"></span>
+      <span><i class="dot dot-todo"></i>Chưa làm</span>
+      <span><i class="dot dot-doing"></i>Đang làm</span>
+      <span><i class="dot dot-done"></i>Hoàn thành</span>
+      <span><i class="dot dot-sel"></i>Đã chọn in</span>
+    </div>
 
     <main id="tree" class="tree" aria-live="polite"></main>
+
+    <footer class="credit">
+      © <span id="year">2026</span> Nghĩa Sơn Chi Nhánh · Powered by
+      <a href="https://dangquocsu.id.vn" target="_blank" rel="noopener">Đặng Quốc Sự</a>
+    </footer>
 
     <div id="selbar" class="selbar" hidden>
       <span><b id="sel-count">0</b> phiếu đã chọn</span>
