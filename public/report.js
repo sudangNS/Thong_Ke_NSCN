@@ -12,7 +12,7 @@ const fmtD = (k) => `${k.slice(8)}/${k.slice(5, 7)}/${k.slice(0, 4)}`;
 const fmtDM = (k) => `${k.slice(8)}/${k.slice(5, 7)}`;
 const kindOf = (p) => (p.kind === 'SP' ? 'sp' : p.kind === 'CUM' ? 'cum' : 'ct');
 const m3Of = (p) => (RP.m3 === 'r' ? p.m3r : p.m3f) || 0;
-const blank = () => ({ ct: 0, cum: 0, sp: 0, m3: 0, e: 0, r: 0, n: 0 });
+const blank = () => ({ ct: 0, cum: 0, sp: 0, m3: 0, e: 0, r: 0, ng: 0, n: 0 });
 function addTo(o, st, e, r = 0, n = 0) { o[kindOf(st.part)] += e; o.m3 += e * m3Of(st.part); o.e += e; o.r += r; o.n += n; }
 const isFinal = (st) => st.part.kind === 'SP' && st.idx === st.part.steps.length - 1;
 
@@ -69,7 +69,7 @@ function rpRows(from, to, group) {
     if (day < from || day > to) continue;
     for (const [id, v] of m) {
       const st = S.steps.get(id);
-      if (st && (!group || (group === 'xuong' ? isFinal(st) : st.group === group))) out.push({ day, st, e: v.e, r: v.r, n: v.n });
+      if (st && (!group || (group === 'xuong' ? isFinal(st) : st.group === group))) out.push({ day, st, e: v.e, r: v.r, ng: v.ng, n: v.n });
     }
   }
   return out;
@@ -78,14 +78,14 @@ function summarize(rows) {
   const groups = new Map(REPORT_GROUPS.map((g) => [g, { out: blank(), all: blank(), stages: new Map() }]));
   const xuong = blank();
   let n = 0;
-  for (const { st, e, r, n: k } of rows) {
+  for (const { st, e, r, ng, n: k } of rows) {
     let G = groups.get(st.group);
     if (!G) groups.set(st.group, (G = { out: blank(), all: blank(), stages: new Map() }));
-    addTo(G.all, st, e, r, k);
+    addTo(G.all, st, e, r, k); G.all.ng += ng;
     if (st.exit) addTo(G.out, st, e);
     let s = G.stages.get(st.stage);
     if (!s) G.stages.set(st.stage, (s = blank()));
-    addTo(s, st, e, r, k);
+    addTo(s, st, e, r, k); s.ng += ng;
     if (isFinal(st)) addTo(xuong, st, e, r);
     n += k;
   }
@@ -120,10 +120,104 @@ function pcsLine(o, withSp = true) {
   return a.join(' · ') || '<span class="muted">0</span>';
 }
 
+/* ---------- Hàng tồn trên chuyền ---------- */
+const WIP_WARN_DAYS = 3; // tồn lâu hơn số ngày này thì tô cảnh báo
+const WIP_KIND = { cho: 'Chờ làm', do: 'Đang làm dở', rap: 'Chờ ráp' };
+// Tồn tính đến hết ngày cuối kỳ (không vượt quá hôm nay)
+function wipDay() { const [, t] = rpRange(), td = todayKey(); return t > td ? td : t; }
+function wipSum(list) {
+  const o = { ct: 0, cum: 0, sp: 0, m3: 0, choM3: 0, doM3: 0, cho: 0, do: 0, age: 0, n: list.length };
+  for (const w of list) {
+    const m = w.qty * m3Of(w.part);
+    o[kindOf(w.part)] += w.qty; o.m3 += m;
+    if (w.kind === 'do') { o.doM3 += m; o.do += w.qty; } else { o.choM3 += m; o.cho += w.qty; }
+    if (w.age > o.age) o.age = w.age;
+  }
+  return o;
+}
+const ageTxt = (d) => (d > 0 ? `${d} ngày` : 'trong ngày');
+const ageCls = (d) => (d >= WIP_WARN_DAYS ? 'warn' : '');
+function wipSrc(w) {
+  if (w.kind === 'do') return 'Đang làm dở trong tổ';
+  if (w.kind === 'rap') return `Chờ ráp (từ ${teamName(w.from.group)})`;
+  return `Từ tổ ${teamName(w.from.group)}`;
+}
+
+function wipSection(g) {
+  const day = wipDay();
+  const list = wipAsOf(day).filter((w) => w.group === g);
+  const o = wipSum(list);
+  const head = `<h3 class="card-t">Hàng tồn trên chuyền <small>đến hết ${fmtD(day)} · = đã giao tới tổ − đã giao đi</small></h3>`;
+  if (!list.length) return `<section class="card wip">${head}<p class="muted">Không có hàng tồn tại tổ.</p></section>`;
+
+  // Theo công đoạn đang chờ vào
+  const bySt = new Map();
+  for (const w of list) {
+    const k = `${w.to.stage}|${wipSrc(w)}`;
+    let r = bySt.get(k);
+    if (!r) bySt.set(k, (r = { stage: w.to.stage, src: wipSrc(w), items: [] }));
+    r.items.push(w);
+  }
+  const stRows = [...bySt.values()].sort((a, b) => stageOrder(a.stage, b.stage) || a.src.localeCompare(b.src, 'vi')).map((r) => {
+    const s = wipSum(r.items);
+    return `<tr><td>${esc(r.stage)}</td><td>${esc(r.src)}</td><td class="n">${s.ct ? fmtQ(s.ct) : ''}</td><td class="n">${s.cum ? fmtQ(s.cum) : ''}</td>
+      <td class="n">${s.sp ? fmtQ(s.sp) : ''}</td><td class="n">${fmtM3(s.m3)}</td><td class="n ${ageCls(s.age)}">${ageTxt(s.age)}</td></tr>`;
+  }).join('');
+
+  // Theo LSX · sản phẩm → chi tiết
+  const dets = new Map();
+  for (const w of list) {
+    const d = w.part.det;
+    let D = dets.get(d.id);
+    if (!D) dets.set(d.id, (D = { det: d, items: [] }));
+    D.items.push(w);
+  }
+  const detRows = [...dets.values()].sort((a, b) => a.det.mo.no.localeCompare(b.det.mo.no, 'vi', { numeric: true }) || num(a.det.stt) - num(b.det.stt)).map((D) => {
+    const d = D.det, s = wipSum(D.items), open = RP.open.has('w:' + d.id);
+    const sub = open ? `<tr class="sub"><td colspan="5"><table class="tbl tbl-in">
+        <tr><th>Chi tiết / cụm</th><th>Đã xong</th><th>Chờ vào</th><th class="n">SL tồn</th><th class="n">m³</th><th class="n">Từ ngày</th><th class="n">Tồn</th></tr>
+        ${D.items.sort((a, b) => b.age - a.age || a.part.lineNo - b.part.lineNo).map((w) => `<tr><td>${esc(w.part.name)} <span class="kind">${esc(KIND_LABEL[w.part.kind] || w.part.kind)}</span></td>
+          <td>${esc(w.from.stage)} <span class="muted">(${esc(teamName(w.from.group))})</span></td><td>${esc(w.to.stage)}${w.kind === 'rap' ? ` <span class="muted">– ${esc(w.to.part.name)}</span>` : ''}</td>
+          <td class="n">${fmtQ(w.qty)}</td><td class="n">${fmtM3(w.qty * m3Of(w.part))}</td><td class="n">${w.since ? fmtDM(w.since) : ''}</td><td class="n ${ageCls(w.age)}">${ageTxt(w.age)}</td></tr>`).join('')}
+      </table></td></tr>` : '';
+    return `<tr class="row ${open ? 'open' : ''}" data-det="w:${esc(d.id)}"><td><span class="caret">▸</span> ${esc(d.mo.no)}${d.stt ? ` · D${esc(d.stt)}` : ''}</td>
+      <td>${esc(d.name)}</td><td>${pcsLine(s)}</td><td class="n">${fmtM3(s.m3)}</td><td class="n ${ageCls(s.age)}">${ageTxt(s.age)}</td></tr>${sub}`;
+  }).join('');
+
+  return `<section class="card wip">${head}
+    <div class="kpis">
+      ${kpi('Tổng tồn tại tổ', fmtM3(o.m3), ' m³', pcsLine(o))}
+      ${kpi('Chờ làm (đã giao tới)', fmtM3(o.choM3), ' m³', `${fmtQ(o.cho)} cái`)}
+      ${kpi('Đang làm dở', fmtM3(o.doM3), ' m³', `${fmtQ(o.do)} cái`)}
+      ${kpi('Tồn lâu nhất', o.age, ' ngày', o.age >= WIP_WARN_DAYS ? `<span class="warn">⚠ quá ${WIP_WARN_DAYS} ngày</span>` : '')}
+    </div>
+    <div class="tbl-wrap"><table class="tbl">
+      <tr><th>Chờ vào công đoạn</th><th>Nguồn</th><th class="n">Chi tiết</th><th class="n">Cụm</th><th class="n">SP</th><th class="n">m³</th><th class="n">Tồn lâu nhất</th></tr>
+      ${stRows}
+      <tr class="tot"><td colspan="2">Cộng</td><td class="n">${fmtQ(o.ct)}</td><td class="n">${fmtQ(o.cum)}</td><td class="n">${fmtQ(o.sp)}</td><td class="n">${fmtM3(o.m3)}</td><td class="n ${ageCls(o.age)}">${ageTxt(o.age)}</td></tr>
+    </table></div>
+    <h4 class="card-t2">Theo LSX · sản phẩm <small>bấm dòng để xem từng chi tiết</small></h4>
+    <div class="tbl-wrap"><table class="tbl tbl-det">
+      <tr><th>LSX</th><th>Sản phẩm</th><th>Số lượng tồn</th><th class="n">m³</th><th class="n">Tồn lâu nhất</th></tr>
+      ${detRows}
+    </table></div>
+  </section>`;
+}
+
 /* ---------- Màn hình chính ---------- */
 function renderOverview() {
   const [f, t] = rpRange();
   const sm = summarize(rpRows(f, t));
+  const wday = wipDay(), wip = wipAsOf(wday);
+  const wipG = new Map(REPORT_GROUPS.map((g) => [g, wipSum(wip.filter((w) => w.group === g))]));
+  const wipAll = wipSum(wip);
+  const maxWip = Math.max(0, ...[...wipG.values()].map((w) => w.m3));
+  const cmpWip = REPORT_GROUPS.map((g) => {
+    const w = wipG.get(g);
+    return `<button class="cmp-row" data-go="${esc(g)}" type="button"><span class="cmp-n">${esc(teamName(g))}</span>
+      <span class="cmp-bar wip"><i style="width:${maxWip ? (w.m3 / maxWip) * 100 : 0}%"></i></span>
+      <span class="cmp-v">${fmtM3(w.m3)} m³</span></button>`;
+  }).join('');
   const bk = rpBuckets();
   const xSeries = series(bk, 'xuong', (s) => s.xuong.m3);
   const maxTeam = Math.max(0, ...REPORT_GROUPS.map((g) => sm.groups.get(g).out.m3));
@@ -143,6 +237,8 @@ function renderOverview() {
       <div class="team-m3">${fmtM3(G.out.m3)}<small> m³</small></div>
       <div class="team-pcs">${pcsLine(G.out)}</div>
       ${bars(bk, series(bk, g, (s) => s.groups.get(g).out.m3))}
+      <div class="team-wip ${ageCls(wipG.get(g).age)}"><span>Tồn trên chuyền</span><b>${fmtM3(wipG.get(g).m3)} m³</b>
+        <small>${wipG.get(g).n ? `${pcsLine(wipG.get(g))} · lâu nhất ${ageTxt(wipG.get(g).age)}` : 'Không có hàng tồn'}</small></div>
       <ul class="team-st">${top || '<li class="muted">Chưa có công đoạn nào ghi nhận</li>'}</ul>
     </div>`;
   }).join('');
@@ -154,11 +250,13 @@ function renderOverview() {
           <div class="kpis">
             ${kpi('Thành phẩm đóng gói', fmtQ(x.sp), ' SP')}
             ${kpi('m³ thành phẩm', fmtM3(x.m3), ' m³')}
+            ${kpi('Tồn trên chuyền', fmtM3(wipAll.m3), ' m³', `đến hết ${fmtD(wday)} · lâu nhất ${ageTxt(wipAll.age)}`)}
             ${kpi('Lượt ghi nhận', fmt(sm.n), ' dòng', 'trong Pallet Log')}
           </div>
           ${bars(bk, xSeries, { tall: true })}
         </div>
-        <div class="cmp"><div class="cmp-t">m³ ra khỏi từng tổ</div>${cmp}</div>
+        <div class="cmp"><div class="cmp-t">m³ ra khỏi từng tổ (sản lượng kỳ)</div>${cmp}
+          <div class="cmp-t cmp-t2">m³ tồn tại tổ (đến hết ${fmtDM(wday)})</div>${cmpWip}</div>
       </div>
     </section>
     <div class="teams">${teams}</div>
@@ -171,6 +269,7 @@ function note() {
     <li><b>Tổng xưởng</b> = thành phẩm xong <b>Đóng gói</b>.</li>
     <li><b>Bỏ qua công đoạn</b>: công đoạn sau đã có số thì công đoạn trước được tính hoàn thành bằng số đó (gán vào ngày báo công đoạn sau). Cụm đã ráp → chi tiết của cụm tính đã xong; SP đã ráp → cụm và chi tiết rời tính đã xong.</li>
     <li><b>m³</b> quy đổi theo BOM Wood (${RP.m3 === 'r' ? 'm³ phôi sơ chế – cột m3_rough' : 'm³ tinh – cột m3_finish'}); cụm/SP = tổng gỗ các chi tiết bên trong. Gỗ đi qua nhiều tổ nên <b>không cộng m³ các tổ với nhau</b>.</li>
+    <li><b>Tồn trên chuyền</b> (tính đến hết ngày cuối kỳ) = hàng tổ trước đã giao qua (đã báo xong công đoạn trước) − hàng tổ đã giao đi. Gồm: <i>chờ làm</i> (đã giao tới, chưa làm), <i>đang làm dở</i> (giữa 2 công đoạn trong tổ), <i>chờ ráp</i> (chi tiết/cụm đã xong, chưa được ráp; trừ phần đã ráp × SL chi tiết/cụm). Mỗi món chỉ nằm ở 1 tổ nên m³ tồn <b>cộng được</b>. Gỗ chưa vào Cắt thô và SP đã đóng gói không tính. Tuổi tồn tính theo nhập trước – ra trước; tô vàng khi ≥ ${WIP_WARN_DAYS} ngày.</li>
     <li>Nguồn: tab <b>Pallet Log</b> (ngày = work_date). Dữ liệu ghi nhận ${P.minDay ? `từ ${fmtD(P.minDay)} đến ${fmtD(P.maxDay)}` : 'chưa có'}.</li>
   </ul></details>`;
 }
@@ -193,11 +292,11 @@ function renderTeam(g) {
   // Công đoạn × ngày
   const byDay = new Map();
   for (const r of rows) { const k = `${r.st.stage}|${r.day}`; byDay.set(k, (byDay.get(k) || 0) + r.e); }
-  const head = `<tr><th>Công đoạn</th><th class="n">Chi tiết</th><th class="n">Cụm</th><th class="n">SP</th><th class="n">m³</th><th class="n" title="Số lượng tổ tự báo trên phiếu">Đã báo</th><th class="n" title="Số tính thêm do công đoạn sau đã báo">Suy ra</th>${matrix ? days.map((d) => `<th class="n d">${fmtDM(d)}</th>`).join('') : ''}</tr>`;
+  const head = `<tr><th>Công đoạn</th><th class="n">Chi tiết</th><th class="n">Cụm</th><th class="n">SP</th><th class="n">m³</th><th class="n" title="Số lượng tổ tự báo trên phiếu">Đã báo</th><th class="n" title="Hàng hỏng (cột qty_ng trong Pallet Log)">NG</th><th class="n" title="Số tính thêm do công đoạn sau đã báo">Suy ra</th>${matrix ? days.map((d) => `<th class="n d">${fmtDM(d)}</th>`).join('') : ''}</tr>`;
   const body = stages.map((s) => {
     const v = G.stages.get(s);
     return `<tr><td>${esc(s)}</td><td class="n">${fmtQ(v.ct)}</td><td class="n">${fmtQ(v.cum)}</td><td class="n">${fmtQ(v.sp)}</td><td class="n">${fmtM3(v.m3)}</td>
-      <td class="n">${fmtQ(v.r)}</td><td class="n ${v.e - v.r > 0.5 ? 'inf' : ''}">${fmtQ(Math.max(0, v.e - v.r))}</td>
+      <td class="n">${fmtQ(v.r)}</td><td class="n ${v.ng ? 'ng' : ''}">${v.ng ? fmtQ(v.ng) : ''}</td><td class="n ${v.e - v.r > 0.5 ? 'inf' : ''}">${fmtQ(Math.max(0, v.e - v.r))}</td>
       ${matrix ? days.map((d) => { const q = byDay.get(`${s}|${d}`) || 0; return `<td class="n d">${q ? fmtQ(q) : ''}</td>`; }).join('') : ''}</tr>`;
   }).join('');
   const o = G.out;
@@ -209,13 +308,15 @@ function renderTeam(g) {
         ${o.cum ? kpi('Cụm ra tổ', fmtQ(o.cum), ' cụm') : ''}
         ${o.sp ? kpi('SP ra tổ', fmtQ(o.sp), ' SP') : ''}
         ${kpi('Lượt ghi nhận', fmt(G.all.n), ' dòng')}
+        ${G.all.ng ? kpi('Hàng NG', fmtQ(G.all.ng), ' cái', `${((G.all.ng / (G.all.r + G.all.ng)) * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% so với tổng đã làm`) : ''}
       </div>
       ${bars(bk, series(bk, g, (x) => (x.groups.get(g) || { out: blank() }).out.m3), { tall: true })}
     </section>
-    <section class="card"><h3 class="card-t">Theo công đoạn</h3>
+    ${wipSection(g)}
+    <section class="card"><h3 class="card-t">Sản lượng theo công đoạn</h3>
       ${stages.length ? `<div class="tbl-wrap"><table class="tbl">${head}${body}</table></div>` : '<p class="muted">Chưa có ghi nhận trong kỳ.</p>'}
     </section>
-    <section class="card"><h3 class="card-t">Theo LSX · sản phẩm <small>bấm dòng để xem từng chi tiết</small></h3>${detTable(rows, g)}</section>`;
+    <section class="card"><h3 class="card-t">Sản lượng theo LSX · sản phẩm <small>bấm dòng để xem từng chi tiết</small></h3>${detTable(rows, g)}</section>`;
 }
 
 function detTable(rows, g) {

@@ -32,6 +32,9 @@ Menu tab (theo quyền): **Báo cáo sản lượng** · **Phiếu sản xuất*
 - Màn hình chính: **Tổng xưởng 1** (thành phẩm đóng gói, m³, so sánh m³ ra khỏi 5 tổ) + **5 thẻ tổ**
   Sơ chế, Tinh chế, Lắp ráp, Dầu, Bao bì (m³, số chi tiết/cụm/SP, biểu đồ theo ngày, số lượng từng công đoạn).
 - Bấm thẻ → chi tiết tổ: bảng công đoạn × ngày (cột *Đã báo* / *Suy ra*), bảng theo LSX · sản phẩm → từng chi tiết.
+- **Hàng tồn trên chuyền** (thẻ tổ, tổng xưởng, khung riêng trong trang tổ) tính đến hết ngày cuối kỳ:
+  tồn tại tổ = đã giao tới (công đoạn trước đã báo xong) − đã giao đi; tách *chờ làm* / *đang làm dở* / *chờ ráp*,
+  theo công đoạn chờ vào và theo LSX → chi tiết; tuổi tồn theo FIFO, cảnh báo khi ≥ 3 ngày. m³ tồn cộng được giữa các tổ.
 - Kỳ: Ngày / Tuần / Tháng / Tuỳ chỉnh; m³ tinh (BOM `m3_finish`) hoặc m³ phôi (`m3_rough`).
   Link giữ kỳ đang xem: `#/san-luong/Sơ chế?k=week&d=2026-11-12`.
 - Nguồn: tab **Pallet Log**. Công đoạn bị bỏ qua được tính bằng số của công đoạn sau; cụm/SP đã ráp thì

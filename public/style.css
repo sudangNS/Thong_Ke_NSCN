@@ -351,6 +351,7 @@ body[data-tab="kiem-tra"] #app [data-tab]:not([data-tab="kiem-tra"]) { display: 
 .tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tbl .d { min-width: 44px; color: var(--text); }
 .tbl td.inf { color: var(--amber); font-weight: 600; }
+.tbl td.ng { color: var(--maroon); font-weight: 600; }
 .tbl tr.tot td { font-weight: 700; border-top: 2px solid var(--line); background: #f6f8f4; }
 .tbl-det tr.row { cursor: pointer; }
 .tbl-det tr.row:hover td { background: #f5f9f2; }
@@ -362,6 +363,23 @@ body[data-tab="kiem-tra"] #app [data-tab]:not([data-tab="kiem-tra"]) { display: 
 .rp-warn { background: #fff8e8; border-left: 4px solid var(--amber); }
 .rp-warn summary { color: var(--maroon); }
 .rp-note ul, .rp-warn ul { margin: 6px 0 2px; padding-left: 20px; display: grid; gap: 3px; }
+
+/* Hàng tồn trên chuyền */
+.cmp-t2 { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.cmp-bar.wip i { background: #8a6d3b; }
+.team-wip {
+  display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 8px;
+  padding: 6px 8px; border-radius: 6px; background: #f6f1e7; font-size: 12px;
+}
+.team-wip > span { color: var(--muted); font-weight: 600; }
+.team-wip > b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.team-wip small { grid-column: 1 / -1; color: var(--muted); }
+.team-wip small b { color: var(--text); }
+.team-wip.warn { background: var(--doing-soft); box-shadow: inset 3px 0 0 var(--doing); }
+.wip { border-left: 4px solid #8a6d3b; }
+.card-t2 { margin: 4px 0 0; font-size: 14px; }
+.card-t2 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.warn, .tbl td.warn { color: var(--maroon); font-weight: 700; }
 
 /* Đồng bộ chi tiết trên dòng SP */
 .sync-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 12px 6px 42px; background: var(--l2-body); border-bottom: 1px solid rgba(0, 0, 0, .05); font-size: 12px; }

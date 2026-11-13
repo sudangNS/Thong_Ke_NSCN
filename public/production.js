@@ -103,9 +103,9 @@ function runProduction(d) {
     const id = String(l.mo_route_id || '').trim().toUpperCase();
     const st = S.steps.get(id);
     const day = parseDay(l.work_date) || parseDay(l.created_at);
-    const qty = num(l.qty);
-    if (!st || !day || !qty) { bad.push({ row: i + 2, id, day, qty, why: !st ? 'Mã phiếu không có trong MO Routing' : !day ? 'Thiếu/sai ngày' : 'Số lượng = 0' }); return; }
-    logs.push({ st, day, qty, t: parseStamp(l.created_at), i });
+    const qty = num(l.qty), ng = num(l.qty_ng); // qty = hàng đạt, qty_ng = hàng hỏng (cột mới, có thể chưa có)
+    if (!st || !day || (!qty && !ng)) { bad.push({ row: i + 2, id, day, qty, why: !st ? 'Mã phiếu không có trong MO Routing' : !day ? 'Thiếu/sai ngày' : 'Số lượng đạt và NG đều = 0' }); return; }
+    logs.push({ st, day, qty, ng, t: parseStamp(l.created_at), i });
   });
   logs.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || (a.t < b.t ? -1 : a.t > b.t ? 1 : 0) || a.i - b.i);
 
@@ -114,14 +114,14 @@ function runProduction(d) {
     let m = daily.get(day);
     if (!m) daily.set(day, (m = new Map()));
     let v = m.get(id);
-    if (!v) m.set(id, (v = { e: 0, r: 0, n: 0 }));
+    if (!v) m.set(id, (v = { e: 0, r: 0, ng: 0, n: 0 }));
     return v;
   };
   for (const lg of logs) {
     const p = lg.st.part;
     p.R[lg.st.idx] += lg.qty;
     const c = cell(lg.day, lg.st.id);
-    c.r += lg.qty; c.n++;
+    c.r += lg.qty; c.ng += lg.ng; c.n++;
     recompute(p, p.floor, (st, delta) => { cell(lg.day, st.id).e += delta; });
   }
 
@@ -134,7 +134,69 @@ function runProduction(d) {
   });
 
   const days = [...daily.keys()].sort();
-  Object.assign(P, { daily, nLogs: logs.length, bad, minDay: days[0] || '', maxDay: days[days.length - 1] || '', version: P.version + 1 });
+  // Dòng thời gian E theo từng bước (để tính tuổi tồn)
+  const tl = new Map();
+  for (const d of days) for (const [id, v] of daily.get(d)) {
+    if (!v.e) continue;
+    let a = tl.get(id);
+    if (!a) tl.set(id, (a = []));
+    a.push([d, v.e]);
+  }
+  Object.assign(P, { daily, tl, wipCache: new Map(), nLogs: logs.length, bad, minDay: days[0] || '', maxDay: days[days.length - 1] || '', version: P.version + 1 });
+}
+
+/* ---------- Hàng tồn trên chuyền (WIP) ----------
+ * Xét từng khoảng giữa 2 bước liên tiếp của 1 chi tiết/cụm/SP:  tồn = E[bước trước] − E[bước sau]
+ *  - 2 bước khác tổ  → "chờ làm" tại tổ của bước sau (tổ trước đã giao qua, tổ sau chưa làm)
+ *  - 2 bước cùng tổ  → "đang làm dở" tại tổ đó
+ *  - bước cuối của chi tiết/cụm → "chờ ráp" tại tổ của bước đầu cụm/SP cha
+ *      tồn = E[bước cuối] − E[bước đầu của cha] × (SL con/SL cha)
+ * Hàng chưa vào bước đầu tiên (gỗ ở kho) và SP đã đóng gói không tính là tồn trên chuyền.
+ * Nhờ suy diễn E[k] ≥ E[k+1] nên tồn luôn ≥ 0, mỗi món nằm đúng 1 tổ → m³ tồn cộng được giữa các tổ.
+ * Tuổi tồn (FIFO): ngày nhập của đơn vị cũ nhất chưa được công đoạn sau nhận. */
+function effAsOf(day) {
+  const E = new Map();
+  for (const [d, m] of P.daily) if (d <= day) for (const [id, v] of m) if (v.e) E.set(id, (E.get(id) || 0) + v.e);
+  return E;
+}
+function oldestSince(tl, outQty, asOf) {
+  let cum = 0;
+  for (const [d, e] of tl || []) {
+    if (d > asOf) break;
+    cum += e;
+    if (cum > outQty + 1e-6) return d;
+  }
+  return '';
+}
+const daysBetween = (a, b) => Math.round((toDate(b) - toDate(a)) / 864e5);
+
+function wipAsOf(day) {
+  const key = day;
+  if (P.wipCache && P.wipCache.has(key)) return P.wipCache.get(key);
+  const E = effAsOf(day);
+  const g = (s) => E.get(s.id) || 0;
+  const out = [];
+  for (const mo of S.mos) for (const det of mo.details) for (const p of det.parts) {
+    const n = p.steps.length;
+    for (let i = 0; i < n; i++) {
+      const s = p.steps[i], up = g(s);
+      if (up <= 1e-9) continue;
+      let to, down;
+      if (i < n - 1) { to = p.steps[i + 1]; down = g(to); }
+      else if (p.parent && p.parent.steps.length) { to = p.parent.steps[0]; down = g(to) * p.ratio; }
+      else continue; // SP đã xong bước cuối (đóng gói) → ra khỏi chuyền
+      const qty = up - down;
+      if (qty <= 1e-6) continue;
+      const since = oldestSince(P.tl.get(s.id), down, day);
+      out.push({
+        part: p, from: s, to, group: to.group, qty,
+        kind: i === n - 1 ? 'rap' : to.group === s.group ? 'do' : 'cho',
+        since, age: since ? daysBetween(since, day) : 0,
+      });
+    }
+  }
+  if (P.wipCache) P.wipCache.set(key, out);
+  return out;
 }
 
 /* ---------- Đồng bộ chi tiết trên dòng SP ----------
