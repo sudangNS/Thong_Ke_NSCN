@@ -1,0 +1,14 @@
+name = "thong-ke-nscn"
+pages_build_output_dir = "public"
+compatibility_date = "2025-09-01"
+
+[vars]
+SHEET_ID = "1VVW7Zrdw-KmO2HLIh1nchKE8DRGWDtd2hCrS-e_aKUU"
+# Ghi đè TTL (giây) nếu cần, ví dụ:
+# TTL_MO_ROUTING = "300"
+
+# Tuỳ chọn: dùng Workers KV làm cache dùng chung toàn cầu (mặc định dùng Cache API theo data center).
+# Tạo: npx wrangler kv namespace create SHEET_CACHE  → dán id vào dưới đây.
+# [[kv_namespaces]]
+# binding = "SHEET_CACHE"
+# id = "<kv-namespace-id>"
