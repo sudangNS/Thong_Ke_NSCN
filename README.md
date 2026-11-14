@@ -19,6 +19,7 @@ public/                 web tĩnh (không cần build)
   vendor/qrcode.js      qrcode-generator 1.4.4 (MIT), lưu cục bộ để in được cả khi CDN lỗi
 functions/api/sheet/[name].js   Cloudflare Pages Function: proxy + cache Google Sheet
 functions/api/me.js             email + quyền người dùng (Cloudflare Access + PERMS)
+functions/_middleware.js        đổi og:image/og:url thành URL tuyệt đối (ảnh xem trước khi share link)
 docs/DANH_GIA_GIOI_HAN.md       đánh giá giới hạn Google/Cloudflare & cơ chế làm mới
 ```
 
