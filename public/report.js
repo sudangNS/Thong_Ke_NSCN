@@ -96,6 +96,24 @@ const series = (buckets, group, pick) => buckets.map((b) => {
   return pick(sm);
 });
 
+/* ---------- Sản lượng trung bình / ngày ----------
+ * Chia cho số ngày CÓ SỐ LIỆU trong kỳ (không chia cho số ngày lịch).
+ * Ví dụ kỳ 10–20 nhưng chỉ 5 ngày có ghi nhận → chia 5. */
+function daysWith(rows, pred) {
+  const s = new Set();
+  for (const r of rows) if (r.e > 1e-9 && pred(r.st)) s.add(r.day);
+  return s.size;
+}
+const outOf = (g) => (st) => st.group === g && st.exit;
+const multiDay = () => { const [f, t] = rpRange(); return f !== t; };
+// Ô "TB/ngày": tổng ÷ số ngày có số liệu
+function avgKpi(label, total, n, f, unit) {
+  return kpi(label, n ? f(total / n) : '0', unit, `${fmt(n)} ngày có số liệu`);
+}
+function avgLine(total, n, f, unit) {
+  return n ? `TB <b>${f(total / n)}</b> ${unit}/ngày <span class="muted">(${fmt(n)} ngày có số liệu)</span>` : '';
+}
+
 /* ---------- Thành phần giao diện ---------- */
 function kpi(label, value, unit, sub = '') {
   return `<div class="kpi"><span class="kpi-l">${label}</span><span class="kpi-v">${value}<small>${unit}</small></span>${sub ? `<span class="kpi-s">${sub}</span>` : ''}</div>`;
@@ -207,7 +225,9 @@ function wipSection(g) {
 /* ---------- Màn hình chính ---------- */
 function renderOverview() {
   const [f, t] = rpRange();
-  const sm = summarize(rpRows(f, t));
+  const allRows = rpRows(f, t);
+  const sm = summarize(allRows);
+  const multi = multiDay();
   const wday = wipDay(), wip = wipAsOf(wday);
   const wipG = new Map(REPORT_GROUPS.map((g) => [g, wipSum(wip.filter((w) => w.group === g))]));
   const wipAll = wipSum(wip);
@@ -236,6 +256,7 @@ function renderOverview() {
       <header><h3>Tổ ${esc(teamName(g))}</h3><span class="go">Chi tiết ›</span></header>
       <div class="team-m3">${fmtM3(G.out.m3)}<small> m³</small></div>
       <div class="team-pcs">${pcsLine(G.out)}</div>
+      ${multi ? `<div class="team-avg">${avgLine(G.out.m3, daysWith(allRows, outOf(g)), fmtM3, 'm³') || '<span class="muted">TB/ngày: chưa có số liệu</span>'}</div>` : ''}
       ${bars(bk, series(bk, g, (s) => s.groups.get(g).out.m3))}
       <div class="team-wip ${ageCls(wipG.get(g).age)}"><span>Tồn trên chuyền</span><b>${fmtM3(wipG.get(g).m3)} m³</b>
         <small>${wipG.get(g).n ? `${pcsLine(wipG.get(g))} · lâu nhất ${ageTxt(wipG.get(g).age)}` : 'Không có hàng tồn'}</small></div>
@@ -250,6 +271,7 @@ function renderOverview() {
           <div class="kpis">
             ${kpi('Thành phẩm đóng gói', fmtQ(x.sp), ' SP')}
             ${kpi('m³ thành phẩm', fmtM3(x.m3), ' m³')}
+            ${multi ? (() => { const n = daysWith(allRows, isFinal); return avgKpi('TB / ngày', x.m3, n, fmtM3, ' m³') + kpi('SP TB / ngày', n ? fmtQ(x.sp / n) : '0', ' SP'); })() : ''}
             ${kpi('Tồn trên chuyền', fmtM3(wipAll.m3), ' m³', `đến hết ${fmtD(wday)} · lâu nhất ${ageTxt(wipAll.age)}`)}
             ${kpi('Lượt ghi nhận', fmt(sm.n), ' dòng', 'trong Pallet Log')}
           </div>
@@ -267,6 +289,7 @@ function note() {
   return `<details class="rp-note"><summary>Cách tính sản lượng</summary><ul>
     <li><b>Sản lượng tổ</b> = số chi tiết / cụm / SP <b>ra khỏi tổ</b> (xong bước cuối thuộc tổ đó trên từng chi tiết). Danh sách công đoạn trong thẻ là số lượt qua từng công đoạn.</li>
     <li><b>Tổng xưởng</b> = thành phẩm xong <b>Đóng gói</b>.</li>
+    <li><b>Trung bình / ngày</b> (khi xem tuần, tháng, tuỳ chỉnh) = tổng sản lượng kỳ ÷ <b>số ngày có số liệu</b> của tổ/xưởng đó (ngày không ghi nhận không tính). Ví dụ kỳ 10–20 chỉ có 5 ngày có số liệu → chia 5.</li>
     <li><b>Bỏ qua công đoạn</b>: công đoạn sau đã có số thì công đoạn trước được tính hoàn thành bằng số đó (gán vào ngày báo công đoạn sau). Cụm đã ráp → chi tiết của cụm tính đã xong; SP đã ráp → cụm và chi tiết rời tính đã xong.</li>
     <li><b>m³</b> quy đổi theo BOM Wood (${RP.m3 === 'r' ? 'm³ phôi sơ chế – cột m3_rough' : 'm³ tinh – cột m3_finish'}); cụm/SP = tổng gỗ các chi tiết bên trong. Gỗ đi qua nhiều tổ nên <b>không cộng m³ các tổ với nhau</b>.</li>
     <li><b>Tồn trên chuyền</b> (tính đến hết ngày cuối kỳ) = hàng tổ trước đã giao qua (đã báo xong công đoạn trước) − hàng tổ đã giao đi. Gồm: <i>chờ làm</i> (đã giao tới, chưa làm), <i>đang làm dở</i> (giữa 2 công đoạn trong tổ), <i>chờ ráp</i> (chi tiết/cụm đã xong, chưa được ráp; trừ phần đã ráp × SL chi tiết/cụm). Mỗi món chỉ nằm ở 1 tổ nên m³ tồn <b>cộng được</b>. Gỗ chưa vào Cắt thô và SP đã đóng gói không tính. Tuổi tồn tính theo nhập trước – ra trước; tô vàng khi ≥ ${WIP_WARN_DAYS} ngày.</li>
@@ -300,10 +323,16 @@ function renderTeam(g) {
       ${matrix ? days.map((d) => { const q = byDay.get(`${s}|${d}`) || 0; return `<td class="n d">${q ? fmtQ(q) : ''}</td>`; }).join('') : ''}</tr>`;
   }).join('');
   const o = G.out;
+  const nAvg = daysWith(rows, outOf(g));
+  const avg = multiDay() ? avgKpi('m³ TB / ngày', o.m3, nAvg, fmtM3, ' m³') +
+    (o.ct || !o.cum ? kpi('Chi tiết TB / ngày', nAvg ? fmtQ(o.ct / nAvg) : '0', ' ct') : '') +
+    (o.cum ? kpi('Cụm TB / ngày', nAvg ? fmtQ(o.cum / nAvg) : '0', ' cụm') : '') +
+    (o.sp ? kpi('SP TB / ngày', nAvg ? fmtQ(o.sp / nAvg) : '0', ' SP') : '') : '';
   return `${crumb(`Tổ ${teamName(g)}`)}
     <section class="card">
       <div class="kpis">
         ${kpi('m³ ra khỏi tổ', fmtM3(o.m3), ' m³')}
+        ${avg}
         ${o.ct || !o.cum ? kpi('Chi tiết ra tổ', fmtQ(o.ct), ' ct') : ''}
         ${o.cum ? kpi('Cụm ra tổ', fmtQ(o.cum), ' cụm') : ''}
         ${o.sp ? kpi('SP ra tổ', fmtQ(o.sp), ' SP') : ''}
@@ -370,7 +399,7 @@ function renderXuong() {
   const x = sm.xuong;
   return `${crumb('Tổng xưởng 1')}
     <section class="card">
-      <div class="kpis">${kpi('Thành phẩm đóng gói', fmtQ(x.sp), ' SP')}${kpi('m³ thành phẩm', fmtM3(x.m3), ' m³')}${kpi('Lượt ghi nhận', fmt(sm.n), ' dòng')}</div>
+      <div class="kpis">${kpi('Thành phẩm đóng gói', fmtQ(x.sp), ' SP')}${kpi('m³ thành phẩm', fmtM3(x.m3), ' m³')}${multiDay() ? (() => { const n = daysWith(rows, isFinal); return kpi('SP TB / ngày', n ? fmtQ(x.sp / n) : '0', ' SP', `${fmt(n)} ngày có số liệu`) + kpi('m³ TB / ngày', n ? fmtM3(x.m3 / n) : '0', ' m³'); })() : ''}${kpi('Lượt ghi nhận', fmt(sm.n), ' dòng')}</div>
       ${bars(bk, series(bk, 'xuong', (s) => s.xuong.sp), { unit: 'SP', f: fmtQ, tall: true })}
     </section>
     <section class="card"><h3 class="card-t">m³ ra từng tổ theo LSX · sản phẩm</h3>

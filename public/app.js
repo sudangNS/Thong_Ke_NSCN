@@ -418,18 +418,16 @@ function renderDet(vd) {
 
 const fmtQ = (n) => fmt(Math.round(Number(n) || 0));
 
-// Đồng bộ chi tiết: đủ bộ cho bao nhiêu SP ở từng mốc (lấy chi tiết/cụm thiếu nhất)
+// SL đồng bộ: 1 số duy nhất = chi tiết ít nhất (đã xong công đoạn cuối ÷ SL chi tiết/SP)
 function syncBar(d) {
-  const sy = d.sync || {};
-  const chips = SYNC_KEYS.filter(([k]) => sy[k]).map(([k, label, desc]) => {
-    const x = sy[k], p = d.qty ? Math.min(100, Math.round((x.v / d.qty) * 100)) : 0;
-    const cls = x.v <= 0 ? 'zero' : x.v >= d.qty ? 'full' : '';
-    const tip = `Đồng bộ ${desc}: đủ cho ${fmt(x.v)}/${fmt(d.qty)} SP` +
-      (x.v < d.qty ? `\nThiếu nhất: ${x.by} – có ${fmtQ(x.have)}, cần ${fmt(x.need)}/SP` : '');
-    return `<span class="sync-chip ${cls}" title="${esc(tip)}"><b>${label}</b> ${fmt(x.v)}<i style="width:${p}%"></i></span>`;
-  });
-  if (!chips.length) return '';
-  return `<div class="sync-bar"><span class="sync-lbl" title="Số SP đủ bộ chi tiết ở từng mốc (đã tính SL chi tiết/SP)">Đồng bộ / ${fmt(d.qty)} SP:</span>${chips.join('')}</div>`;
+  const x = (d.sync || {}).ct;
+  if (!x) return '';
+  const p = d.qty ? Math.min(100, Math.round((x.v / d.qty) * 100)) : 0;
+  const cls = x.v <= 0 ? 'zero' : x.v >= d.qty ? 'full' : '';
+  const tip = `Đủ bộ chi tiết cho ${fmt(x.v)}/${fmt(d.qty)} SP (tính theo chi tiết ít nhất, đã chia SL chi tiết/SP)` +
+    (x.v < d.qty ? `\nÍt nhất: ${x.by} – có ${fmtQ(x.have)}, cần ${fmt(x.need)}/SP` : '');
+  return `<div class="sync-bar"><span class="sync-chip ${cls}" title="${esc(tip)}"><b>SL đồng bộ</b> ${fmt(x.v)}/${fmt(d.qty)}<i style="width:${p}%"></i></span>` +
+    (x.v < d.qty ? `<span class="sync-lbl">ít nhất: ${esc(x.by)}</span>` : '') + '</div>';
 }
 
 function renderGroup(g, d) {

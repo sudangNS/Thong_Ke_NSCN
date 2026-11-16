@@ -200,7 +200,8 @@ function wipAsOf(day) {
 }
 
 /* ---------- Đồng bộ chi tiết trên dòng SP ----------
- * Số SP có thể ráp đủ = min( số đã xong ở mốc ÷ SL/SP ) trên mọi chi tiết/cụm của dòng SP. */
+ * Số SP có thể ráp đủ = min( số đã xong ở mốc ÷ SL/SP ) trên mọi chi tiết/cụm của dòng SP.
+ * Giao diện chỉ hiện 1 số "SL đồng bộ" = mốc 'ct' (chi tiết ít nhất đã xong công đoạn cuối). */
 const SYNC_KEYS = [
   ['sc', 'Phôi SC', 'phôi đã xong Sơ chế'],
   ['tc', 'TC', 'chi tiết đã xong Tinh chế'],
@@ -225,7 +226,11 @@ function detSync(det) {
       take('tc', p, lastOf(p, 'Tinh chế'));
       take('ct', p, last);
     } else if (p.kind === 'CUM') take('cum', p, last);
-    else if (p.kind === 'SP') { take('rap', p, 0); take('dg', p, last); }
+    else if (p.kind === 'SP') {
+      // Chỉ lấy "Ráp TP" khi SP thực sự có bước ráp (vd Herbal Box chỉ có Đóng gói)
+      if (last > 0 || (p.steps[0] && p.steps[0].group !== 'Đóng gói')) take('rap', p, 0);
+      take('dg', p, last);
+    }
   }
   return res;
 }

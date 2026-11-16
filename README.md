@@ -40,8 +40,10 @@ Menu tab (theo quyền): **Báo cáo sản lượng** · **Phiếu sản xuất*
   Link giữ kỳ đang xem: `#/san-luong/Sơ chế?k=week&d=2026-11-12`.
 - Nguồn: tab **Pallet Log**. Công đoạn bị bỏ qua được tính bằng số của công đoạn sau; cụm/SP đã ráp thì
   chi tiết bên trong tính đã xong (xem [public/production.js](public/production.js)).
-- **Đồng bộ chi tiết** trên mỗi dòng SP (tab Phiếu & báo cáo): số SP đủ bộ ở các mốc Phôi SC, TC, CT xong,
-  Cụm, Ráp TP, Đóng gói = min(số đã xong ÷ SL chi tiết/SP).
+- **SL đồng bộ** trên mỗi dòng SP (tab Phiếu & báo cáo): 1 số = chi tiết ít nhất, tức
+  min(số chi tiết đã xong công đoạn cuối ÷ SL chi tiết/SP); di chuột để xem chi tiết đang thiếu nhất.
+- **Trung bình / ngày** (kỳ tuần, tháng, tuỳ chỉnh) = tổng sản lượng ÷ số ngày **có số liệu** trong kỳ
+  (kỳ 10–20 chỉ có 5 ngày ghi nhận → chia 5).
 
 ### Phân quyền
 
