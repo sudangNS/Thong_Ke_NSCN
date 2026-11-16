@@ -450,12 +450,11 @@ body.previewing { overflow: hidden; }
 .ph-cks-l { font-size: 8.5pt; font-style: italic; margin-bottom: 0.6mm; }
 .ph-cks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.2mm; margin-bottom: 1.5mm; }
 .ph-ck {
-  border: 0.3mm solid #000; height: 11mm; padding: 0.5mm 0.8mm;
+  border: 0.3mm solid #000; height: 6.5mm; padding: 0.3mm 0.8mm;
   display: grid; grid-template-columns: 4.2mm 1fr; align-items: center; gap: 1.2mm;
 }
 .ph-box { width: 4mm; height: 4mm; border: 0.35mm solid #000; }
-.ph-ck-t { font-weight: 700; font-size: 9.5pt; line-height: 1.05; overflow: hidden; max-height: 10mm; }
-.ph-ck-t small { display: block; font-weight: 400; font-size: 7pt; }
+.ph-ck-t { font-weight: 700; font-size: 9.5pt; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Bảng ghi nhận đôi: công đoạn – ngày – người làm – số lượng */
 .ph-logs { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
 .ph-log { border-collapse: collapse; width: 100%; table-layout: fixed; }
@@ -464,7 +463,7 @@ body.previewing { overflow: hidden; }
 .ph-log td { height: 6.2mm; }
 .ph-sign {
   display: grid; grid-template-columns: 1fr 1fr; margin-top: 1.5mm; font-weight: 700; font-size: 11pt; text-align: center;
-  flex: 1; min-height: 9mm;
+  flex: 1; min-height: 16mm; align-content: start; /* chừa chỗ ghi tên + ký */
 }
 
 /* ================= In ================= */

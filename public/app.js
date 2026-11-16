@@ -12,7 +12,7 @@ const GIDS = {
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 // Số dòng ghi nhận mỗi bảng (phiếu có 2 bảng đôi): ít công đoạn → nhiều dòng hơn
-const LOG_ROWS = { one: 9, two: 7 };
+const LOG_ROWS = { one: 8, two: 7 };
 const CHECK_COLS = 5; // số ô công đoạn trên 1 hàng của phần đánh dấu
 const GROUP_ORDER = ['Sơ chế', 'Tinh chế', 'Lắp ráp', 'Dầu', 'Đóng gói'];
 const KIND_LABEL = { SP: 'Thành phẩm', CUM: 'Cụm', 'CT thuộc cụm': 'CT thuộc cụm', 'CT rời': 'CT rời' };
@@ -554,8 +554,8 @@ function phieuHTML({ g, k, n }) {
   const cum = p.kind === 'SP' ? '—' : p.kind === 'CT rời' ? 'Chi tiết rời' : p.cumName;
   const qtyReq = Math.max(...g.steps.map((s) => s.qtyReq));
   // Danh sách công đoạn tại tổ: ô vuông để thống kê đánh dấu khi xong
-  const checks = g.steps.map((s) => `<div class="ph-ck"><span class="ph-box"></span>
-      <span class="ph-ck-t"><small>Bước ${s.no}</small>${esc(s.stage)}</span></div>`).join('');
+  const checks = g.steps.map((s, i) => `<div class="ph-ck"><span class="ph-box"></span>
+      <span class="ph-ck-t">(${i + 1}) ${esc(s.stage)}</span></div>`).join('');
   const two = g.steps.length > CHECK_COLS;
   const nRows = two ? LOG_ROWS.two : LOG_ROWS.one;
   const logTable = () => `<table class="ph-log">
