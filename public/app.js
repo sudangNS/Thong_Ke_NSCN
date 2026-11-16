@@ -11,14 +11,16 @@ const GIDS = {
   pallet_log: '2066587219', // ghi nhận sản lượng theo ngày (work_date, mo_route_id, qty)
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
-const LOG_ROWS = 7; // số dòng ghi nhận trên phiếu (theo mẫu)
+// Số dòng ghi nhận mỗi bảng (phiếu có 2 bảng đôi): ít công đoạn → nhiều dòng hơn
+const LOG_ROWS = { one: 9, two: 7 };
+const CHECK_COLS = 5; // số ô công đoạn trên 1 hàng của phần đánh dấu
 const GROUP_ORDER = ['Sơ chế', 'Tinh chế', 'Lắp ráp', 'Dầu', 'Đóng gói'];
 const KIND_LABEL = { SP: 'Thành phẩm', CUM: 'Cụm', 'CT thuộc cụm': 'CT thuộc cụm', 'CT rời': 'CT rời' };
 
 const S = {
   mos: [], steps: new Map(), loadedAt: 0, fetchedAt: 0, cacheInfo: '', mode: '',
   selected: new Set(), expand: new Map(), filterSig: '',
-  view: [], scopes: new Map(), loading: false, previewIds: null,
+  view: [], scopes: new Map(), loading: false, previewIds: null, segs: new Map(),
 };
 
 const $ = (s) => document.querySelector(s);
@@ -108,7 +110,7 @@ async function load(force = false) {
     update();
     renderReport();
     updateSync();
-    if (S.pendingPreview) { const ids = S.pendingPreview.filter((id) => S.steps.has(id)); S.pendingPreview = null; if (ids.length) openPreview(ids); }
+    if (S.pendingPreview) { const ids = S.pendingPreview.flatMap(idsFromCode); S.pendingPreview = null; if (ids.length) openPreview(ids); }
   } catch (e) {
     console.error(e);
     setSync(`Lỗi tải dữ liệu: ${e.message}`, 'err');
@@ -202,8 +204,10 @@ function build(d) {
   }
 
   // Tên cụm cho chi tiết thuộc cụm + chuỗi tìm kiếm
+  S.segs = new Map();
   for (const p of parts.values()) {
     p.steps.sort((a, b) => a.no - b.no);
+    buildSegs(p);
     const cum = p.kind === 'CUM' ? p : parts.get(p.cumRef);
     p.cumName = p.kind === 'SP' || p.kind === 'CT rời' ? '' : (cum ? cum.name : '');
     p.cumCode = cum ? cum.code : '';
@@ -221,6 +225,40 @@ function build(d) {
     }
   }
   S.steps = steps;
+}
+
+/* Phiếu pallet theo TỔ: 1 chi tiết/cụm/SP mang 1 phiếu suốt các công đoạn liên tiếp cùng tổ.
+ * Mã phiếu = mo_route_id bước đầu (+ "-Sxx" bước cuối nếu nhiều bước), VD LSX-02-1626-01-W002-S01-S03.
+ * Dữ liệu ghi nhận vẫn theo từng công đoạn (mo_route_id) – mỗi công đoạn có QR nhỏ riêng trên phiếu. */
+function buildSegs(p) {
+  p.segs = [];
+  let seg = null;
+  for (const s of p.steps) {
+    if (!seg || seg.group !== s.group) p.segs.push((seg = { part: p, group: s.group, steps: [] }));
+    seg.steps.push(s);
+    s.seg = seg;
+  }
+  for (const g of p.segs) {
+    const a = g.steps[0], b = g.steps[g.steps.length - 1];
+    g.id = a.id;
+    g.code = a === b ? a.id : `${a.id}-${b.id.slice(b.id.lastIndexOf('-') + 1)}`;
+    S.segs.set(norm(g.code), g);
+  }
+}
+// Danh sách phiếu (tổ) từ danh sách mã công đoạn, giữ thứ tự, không trùng
+function segsOf(ids) {
+  const out = new Set();
+  for (const id of ids) { const s = S.steps.get(id); if (s && s.seg) out.add(s.seg); }
+  return [...out];
+}
+const segStepIds = (ids) => segsOf(ids).flatMap((g) => g.steps.map((s) => s.id));
+const segSelected = (g) => g.steps.some((s) => S.selected.has(s.id));
+// Nhận mã công đoạn hoặc mã phiếu tổ → danh sách mã công đoạn
+function idsFromCode(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (S.steps.has(c)) return [c];
+  const g = S.segs.get(norm(c));
+  return g ? g.steps.map((s) => s.id) : [];
 }
 
 // Tiến độ LSX / dòng SP (gọi sau runProduction vì "hoàn thành" tính theo số đã suy diễn)
@@ -282,9 +320,17 @@ function readFilters() {
 function compute() {
   const f = readFilters();
   const tokens = norm(f.q).split(/\s+/).filter(Boolean);
-  // Mã phiếu (quét QR) dạng ...-S01: lọc đúng bước đó
-  const stepToks = tokens.filter((t) => /-s\d+$/.test(t));
-  const textToks = tokens.map((t) => (/-s\d+$/.test(t) ? t.replace(/-s\d+$/, '') : t));
+  // Mã quét QR: phiếu tổ dạng ...-S01-S03 (lọc các bước của phiếu) hoặc công đoạn ...-S01 (lọc đúng bước đó)
+  const stepToks = tokens.flatMap((t) => {
+    const g = S.segs.get(t);
+    if (g) return g.steps.map((s) => s.idn);
+    return /-s\d+$/.test(t) ? [t] : [];
+  });
+  const textToks = tokens.map((t) => {
+    const g = S.segs.get(t);
+    if (g) return norm(g.part.ref);
+    return /-s\d+$/.test(t) ? t.replace(/-s\d+$/, '') : t;
+  });
   const sig = JSON.stringify(f);
   if (sig !== S.filterSig) { S.expand.clear(); S.filterSig = sig; }
   S.filtering = Boolean(tokens.length || f.product || f.kind || f.group || f.stage || f.status);
@@ -293,6 +339,7 @@ function compute() {
   const add = (k, ids) => { let a = scopes.get(k); if (!a) scopes.set(k, (a = [])); a.push(...ids); };
   const view = [];
   let nSteps = 0, nParts = 0;
+  const segSet = new Set();
 
   for (const mo of S.mos) {
     if (f.mo && mo.id !== f.mo) continue;
@@ -320,6 +367,7 @@ function compute() {
         g.n += ids.length; vDet.n += ids.length; vMo.n += ids.length;
         add(`p:${p.ref}`, ids); add(`g:${det.id}|${gk}`, ids); add(`d:${det.id}`, ids); add(`m:${mo.id}`, ids); add('all', ids);
         nSteps += ids.length; nParts++;
+        steps.forEach((s) => segSet.add(s.seg));
       }
       if (vDet.n) vMo.details.push(vDet);
     }
@@ -329,7 +377,7 @@ function compute() {
   for (const vm of view) for (const vd of vm.details) {
     vd.groupList = [...vd.groups.values()].sort((a, b) => rankGroup(a, vd.det) - rankGroup(b, vd.det));
   }
-  S.view = view; S.scopes = scopes; S.counts = { nSteps, nParts, nMo: view.length, nDet: view.reduce((s, v) => s + v.details.length, 0) };
+  S.view = view; S.scopes = scopes; S.counts = { nSteps, nSegs: segSet.size, nParts, nMo: view.length, nDet: view.reduce((s, v) => s + v.details.length, 0) };
 }
 function rankGroup(g, det) {
   if (g.key === 'sp') return -1;
@@ -351,11 +399,12 @@ function update() {
 }
 
 function scopeBtn(key, label) {
-  const ids = S.scopes.get(key) || [];
-  const nSel = ids.reduce((s, id) => s + (S.selected.has(id) ? 1 : 0), 0);
-  const state = nSel === 0 ? '' : nSel === ids.length ? 'all' : 'some';
+  // Đếm theo phiếu tổ (1 chi tiết × 1 tổ), không theo từng công đoạn
+  const segs = segsOf(S.scopes.get(key) || []);
+  const nSel = segs.reduce((s, g) => s + (segSelected(g) ? 1 : 0), 0);
+  const state = nSel === 0 ? '' : nSel === segs.length ? 'all' : 'some';
   const icon = state === 'all' ? '☑' : state === 'some' ? '◩' : '☐';
-  return `<button class="scope ${state}" type="button" data-scope="${esc(key)}" title="Chọn/bỏ chọn ${ids.length} phiếu">${icon} ${label ?? ids.length}</button>`;
+  return `<button class="scope ${state}" type="button" data-scope="${esc(key)}" title="Chọn/bỏ chọn ${segs.length} phiếu tổ">${icon} ${label ?? segs.length}</button>`;
 }
 const pct = (done, total) => (total ? Math.round((done / total) * 100) : 0);
 function progress(done, total) {
@@ -365,8 +414,8 @@ function progress(done, total) {
 
 function render() {
   const c = S.counts;
-  $('#result-count').innerHTML = `<b>${c.nMo}</b> LSX · <b>${c.nDet}</b> dòng SP · <b>${fmt(c.nParts)}</b> chi tiết/cụm · <b>${fmt(c.nSteps)}</b> phiếu công đoạn`;
-  $('#btn-select-all').textContent = `Chọn tất cả ${fmt(c.nSteps)} phiếu đang lọc`;
+  $('#result-count').innerHTML = `<b>${c.nMo}</b> LSX · <b>${c.nDet}</b> dòng SP · <b>${fmt(c.nParts)}</b> chi tiết/cụm · <b>${fmt(c.nSteps)}</b> công đoạn · <b>${fmt(c.nSegs)}</b> phiếu tổ`;
+  $('#btn-select-all').textContent = `Chọn tất cả ${fmt(c.nSegs)} phiếu đang lọc`;
   $('#btn-select-all').disabled = !c.nSteps;
   if (!S.view.length) {
     $('#tree').innerHTML = `<div class="empty">Không có kết quả phù hợp.</div>`;
@@ -468,16 +517,18 @@ function renderPart({ p, steps }) {
 }
 
 function renderSelbar() {
-  const n = S.selected.size;
+  const n = segsOf(S.selected).length;
   $('#selbar').hidden = n === 0;
   $('#sel-count').textContent = fmt(n);
 }
 
-/* ---------- Chọn phiếu ---------- */
+/* ---------- Chọn phiếu ----------
+ * Chọn theo phiếu tổ: bấm 1 công đoạn là chọn/bỏ cả phiếu tổ chứa công đoạn đó. */
 function toggleIds(ids) {
-  const allSel = ids.every((id) => S.selected.has(id));
-  if (!allSel && ids.length > 300 && !confirm(`Chọn ${fmt(ids.length)} phiếu?`)) return;
-  ids.forEach((id) => (allSel ? S.selected.delete(id) : S.selected.add(id)));
+  const segs = segsOf(ids);
+  const allSel = segs.every(segSelected);
+  if (!allSel && segs.length > 300 && !confirm(`Chọn ${fmt(segs.length)} phiếu?`)) return;
+  segs.forEach((g) => g.steps.forEach((s) => (allSel ? S.selected.delete(s.id) : S.selected.add(s.id))));
   render();
 }
 
@@ -496,14 +547,36 @@ function qrSvg(text) {
   return qr.createSvgTag({ cellSize: 2, margin: 0, scalable: true });
 }
 
-function phieuHTML({ s, k, n }) {
-  const p = s.part, d = p.det, mo = d.mo;
-  const team = s.group || s.stage; // tên tổ = nhóm công đoạn (Sơ chế, Tinh chế, Lắp ráp, Dầu, Đóng gói)
+// Nhận hàng từ đâu / giao đi đâu của 1 phiếu tổ
+function segFlow(g) {
+  const p = g.part, a = g.steps[0], b = g.steps[g.steps.length - 1];
+  const before = p.steps[a.idx - 1], after = p.steps[b.idx + 1];
+  const from = before ? `tổ ${esc(before.group)} (${esc(before.stage)})` : p.kind === 'CUM' || p.kind === 'SP' ? 'ráp từ chi tiết/cụm' : 'kho gỗ';
+  let to;
+  if (after) to = `tổ ${esc(after.group)} (${esc(after.stage)})`;
+  else {
+    const par = p.parent; // cụm cha hoặc SP (production.js → linkParts)
+    to = par ? `ráp vào ${esc(par.kind === 'SP' ? 'thành phẩm' : par.name)}` : 'Kết thúc';
+  }
+  return `Nhận từ: ${from} · Giao tới: <b>${to}</b>`;
+}
+
+function phieuHTML({ g, k, n }) {
+  const p = g.part, d = p.det, mo = d.mo;
+  const team = g.group || g.steps[0].stage; // tên tổ = nhóm công đoạn (Sơ chế, Tinh chế, Lắp ráp, Dầu, Đóng gói)
   const lsx = `${mo.no}${d.stt ? ' – Dòng ' + d.stt : ''}`;
   const cum = p.kind === 'SP' ? '—' : p.kind === 'CT rời' ? 'Chi tiết rời' : p.cumName;
-  const total = p.steps.length;
-  const flow = `CĐ trước: ${s.prev ? esc(s.prev) : '—'} · CĐ kế tiếp: <b>${s.next ? esc(s.next) : 'Kết thúc'}</b>`;
-  const rows = Array.from({ length: LOG_ROWS }, () => '<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
+  const qtyReq = Math.max(...g.steps.map((s) => s.qtyReq));
+  // Danh sách công đoạn tại tổ: ô vuông để đánh dấu + QR nhỏ = mã công đoạn (mo_route_id) để nhập liệu
+  const checks = g.steps.map((s) => `<div class="ph-ck"><span class="ph-box"></span>
+      <span class="ph-ck-t"><small>Bước ${s.no}</small>${esc(s.stage)}</span><span class="ph-ck-qr">${qrSvg(s.id)}</span></div>`).join('');
+  const two = g.steps.length > CHECK_COLS;
+  const nRows = two ? LOG_ROWS.two : LOG_ROWS.one;
+  const logTable = () => `<table class="ph-log">
+      <colgroup><col style="width:33%"><col style="width:17%"><col style="width:32%"><col></colgroup>
+      <thead><tr><th>Công đoạn</th><th>Ngày</th><th>Người làm</th><th>Số lượng</th></tr></thead>
+      <tbody>${'<tr><td></td><td></td><td></td><td></td></tr>'.repeat(nRows)}</tbody>
+    </table>`;
   return `<div class="phieu">
     <div class="ph-title">PHIẾU PALLET TỔ ${esc(team.toUpperCase())}</div>
     <div class="ph-head">
@@ -513,36 +586,34 @@ function phieuHTML({ s, k, n }) {
         <tr><th>Lệnh sản xuất:</th><td>${esc(lsx)}</td><th>Kích thước:</th><td>${esc(p.size)}</td></tr>
         <tr><th>Sản phẩm:</th><td class="${d.name.length > 34 ? 'sm' : ''}" title="${esc(d.code)}">${esc(d.name)}</td><th>NVL:</th><td class="${(p.material || d.wood).length > 16 ? 'sm' : ''}">${esc(p.material || d.wood)}</td></tr>
         <tr><th>Cụm:</th><td>${esc(cum)}</td><th>SL/Pcs:</th><td>${fmt(p.qtyPer)}</td></tr>
-        <tr><th>Tên chi tiết:</th><td class="big">${esc(p.name)}${p.code ? ` <small>${esc(p.code)}</small>` : ''}</td><th>SL Tổng:</th><td class="big">${fmt(s.qtyReq)}</td></tr>
-        <tr><th>Công đoạn:</th><td class="big">${esc(s.stage)} <small>(bước ${s.no}/${total})</small></td><th>Pallet số:</th><td class="${n > 1 ? 'big' : 'fill'}">${n > 1 ? `${k} / ${n}` : ''}</td></tr>
-        <tr><th>Mã lô gỗ:</th><td class="fill"></td><th>Mã lô dầu:</th><td class="fill"></td></tr>
+        <tr><th>Tên chi tiết:</th><td class="big">${esc(p.name)}${p.code ? ` <small>${esc(p.code)}</small>` : ''}</td><th>SL Tổng:</th><td class="big">${fmt(qtyReq)}</td></tr>
+        <tr><th>Mã lô gỗ:</th><td class="fill"></td><th>Pallet số:</th><td class="${n > 1 ? 'big' : 'fill'}">${n > 1 ? `${k} / ${n}` : ''}</td></tr>
+        <tr><th>Mã lô dầu:</th><td class="fill"></td><th>Hạn giao:</th><td>${d.due ? fmtDate(d.due) : ''}</td></tr>
       </table>
-      <div class="ph-qr">${qrSvg(s.id)}<div class="ph-id">${esc(s.id)}</div></div>
+      <div class="ph-qr">${qrSvg(g.code)}<div class="ph-id">${esc(g.code)}</div></div>
     </div>
-    <div class="ph-cert"><span class="ph-flow">${flow}</span><b>${esc(certOf(d.wood))}</b><span class="ph-due">${d.due ? 'Hạn giao: ' + fmtDate(d.due) : ''}</span></div>
-    <table class="ph-log">
-      <colgroup><col style="width:17%"><col style="width:13%"><col style="width:13%"><col style="width:19%"><col style="width:11%"><col></colgroup>
-      <thead><tr><th>Ngày</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Người thực hiện</th><th>Số lượng</th><th>Ghi chú</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="ph-cert"><span class="ph-flow">${segFlow(g)}</span><b>${esc(certOf(d.wood))}</b></div>
+    <div class="ph-cks-l">Công đoạn tại tổ (${g.steps.length}) – tô/đánh dấu khi hoàn thành:</div>
+    <div class="ph-cks">${checks}</div>
+    <div class="ph-logs">${logTable()}${logTable()}</div>
     <div class="ph-sign"><div>Thống Kê</div><div>Tổ Trưởng</div></div>
   </div>`;
 }
 
-function sortIds(ids, mode) {
-  const st = ids.map((id) => S.steps.get(id)).filter(Boolean);
-  if (mode === 'stage') {
-    // Chia theo tổ (nhóm công đoạn) → công đoạn → thứ tự chi tiết
-    st.sort((a, b) => groupRank(a.group) - groupRank(b.group) || a.group.localeCompare(b.group, 'vi') || a.stage.localeCompare(b.stage, 'vi') || a.seq - b.seq);
-  } else st.sort((a, b) => a.seq - b.seq);
-  return st;
+// Sắp xếp phiếu tổ: theo chi tiết (thứ tự LSX → SP → chi tiết → tổ) hoặc chia theo tổ
+function sortSegs(segs, mode) {
+  const seq = (g) => g.steps[0].seq;
+  if (mode === 'stage') segs.sort((a, b) => groupRank(a.group) - groupRank(b.group) || a.group.localeCompare(b.group, 'vi') || seq(a) - seq(b));
+  else segs.sort((a, b) => seq(a) - seq(b));
+  return segs;
 }
 
 function renderPreview() {
   const paper = $('#pv-paper').value, mode = $('#pv-sort').value;
   const copies = Math.max(1, Math.min(20, parseInt($('#pv-copies').value, 10) || 1));
   // Mỗi bản in = 1 pallet; in n bản thì đánh số Pallet 1/n … n/n (in 1 bản thì để trống ghi tay)
-  const st = sortIds(S.previewIds, mode).flatMap((s) => Array.from({ length: copies }, (_, i) => ({ s, k: i + 1, n: copies })));
+  const segs = sortSegs(segsOf(S.previewIds), mode);
+  const st = segs.flatMap((g) => Array.from({ length: copies }, (_, i) => ({ g, k: i + 1, n: copies })));
   const per = paper === 'a4' ? 2 : 1;
   $('#page-size').textContent = paper === 'a4' ? '@page { size: A4 portrait; margin: 0; }' : '@page { size: A5 landscape; margin: 0; }';
   const pages = [];
@@ -550,13 +621,14 @@ function renderPreview() {
     pages.push(`<div class="page page-${paper}">${st.slice(i, i + per).map(phieuHTML).join('<div class="cut"></div>')}</div>`);
   }
   $('#print-pages').innerHTML = pages.join('');
-  $('#pv-title').textContent = `${fmt(S.previewIds.length)} phiếu${copies > 1 ? ` × ${copies} bản` : ''} · ${fmt(pages.length)} tờ ${paper === 'a4' ? 'A4' : 'A5'}`;
+  $('#pv-title').textContent = `${fmt(segs.length)} phiếu tổ${copies > 1 ? ` × ${copies} bản` : ''} · ${fmt(pages.length)} tờ ${paper === 'a4' ? 'A4' : 'A5'}`;
   try { localStorage.setItem('nscn.paper', paper); localStorage.setItem('nscn.sort', mode); } catch { /* ignore */ }
 }
 
 function openPreview(ids) {
   if (!ids.length) return;
-  if (ids.length > 500 && !confirm(`Xem trước ${fmt(ids.length)} phiếu có thể chậm. Tiếp tục?`)) return;
+  const nSeg = segsOf(ids).length;
+  if (nSeg > 500 && !confirm(`Xem trước ${fmt(nSeg)} phiếu có thể chậm. Tiếp tục?`)) return;
   S.previewIds = ids;
   renderPreview();
   $('#preview').hidden = false;
@@ -661,8 +733,8 @@ async function init() {
   $('#q').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     // Quét QR (máy quét gửi Enter): nếu đúng 1 mã phiếu thì mở luôn phiếu đó
-    const id = $('#q').value.trim().toUpperCase();
-    if (S.steps.has(id)) openPreview([id]);
+    const ids = idsFromCode($('#q').value);
+    if (ids.length) openPreview(ids);
   });
   F_IDS.forEach((id) => $('#' + id).addEventListener('change', () => { if (id === 'f-group') fillStageOptions(); update(); }));
   $('#f-running').addEventListener('change', update);
@@ -687,7 +759,7 @@ async function init() {
 
   $('#tree').addEventListener('click', (e) => {
     const step = e.target.closest('[data-step]');
-    if (step) { const id = step.dataset.step; S.selected.has(id) ? S.selected.delete(id) : S.selected.add(id); render(); return; }
+    if (step) { toggleIds([step.dataset.step]); return; }
     const scope = e.target.closest('[data-scope]');
     if (scope) { e.stopPropagation(); toggleIds(S.scopes.get(scope.dataset.scope) || []); return; }
     const view = e.target.closest('[data-view]');

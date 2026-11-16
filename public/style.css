@@ -440,20 +440,32 @@ body.previewing { overflow: hidden; }
 .ph-qr svg { width: 23mm; height: 23mm; display: block; margin: 0 auto; }
 .ph-id { font: 6.5pt/1.1 Arial, sans-serif; margin-top: 0.8mm; word-break: break-all; }
 .ph-cert {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 3mm;
-  margin: 1.5mm 0 1.2mm;
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3mm;
+  margin: 1.2mm 0 1mm;
 }
-.ph-cert > b { font-size: 15pt; }
-.ph-flow { font-size: 9pt; }
-.ph-flow b { font-size: 10.5pt; }
-.ph-due { font-size: 8.5pt; text-align: right; }
+.ph-cert > b { font-size: 14pt; }
+.ph-flow { font-size: 9pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-flow b { font-size: 10pt; }
+/* Danh sách công đoạn tại tổ: ô đánh dấu + QR nhỏ (mã công đoạn) */
+.ph-cks-l { font-size: 8.5pt; font-style: italic; margin-bottom: 0.6mm; }
+.ph-cks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.2mm; margin-bottom: 1.5mm; }
+.ph-ck {
+  border: 0.3mm solid #000; height: 11mm; padding: 0.5mm 0.8mm;
+  display: grid; grid-template-columns: 4.2mm 1fr 10mm; align-items: center; gap: 1mm;
+}
+.ph-box { width: 4mm; height: 4mm; border: 0.35mm solid #000; }
+.ph-ck-t { font-weight: 700; font-size: 9.5pt; line-height: 1.05; overflow: hidden; max-height: 10mm; }
+.ph-ck-t small { display: block; font-weight: 400; font-size: 7pt; }
+.ph-ck-qr svg { width: 10mm; height: 10mm; display: block; }
+/* Bảng ghi nhận đôi: công đoạn – ngày – người làm – số lượng */
+.ph-logs { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
 .ph-log { border-collapse: collapse; width: 100%; table-layout: fixed; }
 .ph-log th, .ph-log td { border: 0.3mm solid #000; }
-.ph-log th { font-weight: 700; height: 7.5mm; font-size: 10.5pt; }
-.ph-log td { height: 7.6mm; }
+.ph-log th { font-weight: 700; height: 6.5mm; font-size: 10pt; }
+.ph-log td { height: 6.2mm; }
 .ph-sign {
-  display: grid; grid-template-columns: 1fr 1fr; margin-top: 2mm; font-weight: 700; font-size: 11pt; text-align: center;
-  flex: 1; min-height: 12mm;
+  display: grid; grid-template-columns: 1fr 1fr; margin-top: 1.5mm; font-weight: 700; font-size: 11pt; text-align: center;
+  flex: 1; min-height: 9mm;
 }
 
 /* ================= In ================= */
