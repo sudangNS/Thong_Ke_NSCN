@@ -21,6 +21,8 @@ const SHEETS = {
   product:    { gid: '151523159',  ttl: 3600 },  // danh mục sản phẩm
   bom_wood:   { gid: '1862351213', ttl: 3600 },  // định mức gỗ (kích thước, NVL, m³)
   pallet_log: { gid: '2066587219', ttl: 300 },   // ghi nhận sản lượng theo ngày → báo cáo sản lượng
+  works_list: { gid: '1338053465', ttl: 3600 },  // danh mục công đoạn: work_name → team_id
+  to:         { gid: '502566818',  ttl: 3600 },  // danh mục tổ: team_id, team_name
 };
 
 const MIN_FORCE_INTERVAL = 30; // giây – chặn bấm "Làm mới" liên tục gây 429 từ Google

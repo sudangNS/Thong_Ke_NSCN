@@ -9,6 +9,8 @@ const GIDS = {
   product: '151523159',
   bom_wood: '1862351213',
   pallet_log: '2066587219', // ghi nhận sản lượng theo ngày (work_date, mo_route_id, qty)
+  works_list: '1338053465', // Works List: work_name (= MO Routing.stage) → team_id
+  to: '502566818',          // To: team_id → team_name
 };
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 // Số dòng ghi nhận mỗi bảng (phiếu có 2 bảng đôi): ít công đoạn → nhiều dòng hơn
@@ -20,7 +22,7 @@ const KIND_LABEL = { SP: 'Thành phẩm', CUM: 'Cụm', 'CT thuộc cụm': 'CT 
 const S = {
   mos: [], steps: new Map(), loadedAt: 0, fetchedAt: 0, cacheInfo: '', mode: '',
   selected: new Set(), expand: new Map(), filterSig: '',
-  view: [], scopes: new Map(), loading: false, previewIds: null, partByRef: new Map(),
+  view: [], scopes: new Map(), loading: false, previewIds: null, partByRef: new Map(), segByCode: new Map(), workTeam: new Map(), teams: new Map(),
 };
 
 const $ = (s) => document.querySelector(s);
@@ -205,6 +207,10 @@ function build(d) {
 
   // Tên cụm cho chi tiết thuộc cụm + chuỗi tìm kiếm
   S.partByRef = new Map();
+  S.segByCode = new Map();
+  // Tổ theo dữ liệu gốc: Works List (work_name → team_id) + To (team_id → team_name)
+  S.workTeam = new Map((d.works_list || []).map((w) => [String(w.work_name || '').trim(), String(w.team_id || '').trim()]));
+  S.teams = new Map((d.to || []).map((t) => [String(t.team_id || '').trim(), String(t.team_name || '').trim()]));
   for (const p of parts.values()) {
     p.steps.sort((a, b) => a.no - b.no);
     buildSegs(p);
@@ -228,7 +234,16 @@ function build(d) {
 }
 
 /* Phiếu pallet theo TỔ: 1 chi tiết/cụm/SP mang 1 phiếu suốt các công đoạn liên tiếp cùng tổ.
- * QR trên phiếu = part_ref (mã chi tiết/cụm/SP trong LSX), dùng chung cho mọi phiếu tổ của chi tiết đó. */
+ * Gom các bước liên tiếp cùng MO Routing.stage_group. Tổ của phiếu = team_id (sheet To) tra qua
+ * Works List theo tên công đoạn; lấy team_id chiếm đa số trong phiếu (chịu được 1 công đoạn đặt tên lệch).
+ * QR trên phiếu = part_ref + "-" + team_id, VD LSX-02-1626-01-W004-T-TC. */
+function segTeam(g) {
+  const cnt = new Map();
+  for (const s of g.steps) { const t = S.workTeam.get(s.stage); if (t) cnt.set(t, (cnt.get(t) || 0) + 1); }
+  let best = '', n = 0;
+  for (const [t, c] of cnt) if (c > n) { best = t; n = c; }
+  return best;
+}
 function buildSegs(p) {
   p.segs = [];
   let seg = null;
@@ -236,6 +251,14 @@ function buildSegs(p) {
     if (!seg || seg.group !== s.group) p.segs.push((seg = { part: p, group: s.group, steps: [] }));
     seg.steps.push(s);
     s.seg = seg;
+  }
+  for (const g of p.segs) {
+    g.teamId = segTeam(g);
+    g.teamName = S.teams.get(g.teamId) || (g.group ? `Tổ ${g.group}` : '');
+    // Thiếu team_id (công đoạn chưa có trong Works List) → tạm dùng stage_group để vẫn in được, kèm cảnh báo
+    g.code = `${p.ref}-${g.teamId || norm(g.group).replace(/\s+/g, '').toUpperCase()}`;
+    if (!g.teamId) console.warn('Không tra được team_id trong Works List:', g.steps.map((s) => s.stage).join(', '), g.code);
+    S.segByCode.set(norm(g.code), g);
   }
   S.partByRef.set(String(p.ref).toUpperCase(), p);
 }
@@ -247,10 +270,12 @@ function segsOf(ids) {
 }
 const segStepIds = (ids) => segsOf(ids).flatMap((g) => g.steps.map((s) => s.id));
 const segSelected = (g) => g.steps.some((s) => S.selected.has(s.id));
-// Nhận mã công đoạn (mo_route_id) hoặc part_ref (QR trên phiếu) → danh sách mã công đoạn
+// Nhận mã QR phiếu (part_ref-Tổ), mã công đoạn (mo_route_id) hoặc part_ref → danh sách mã công đoạn
 function idsFromCode(code) {
   const c = String(code || '').trim().toUpperCase();
   if (S.steps.has(c)) return [c];
+  const g = S.segByCode.get(norm(c));
+  if (g) return g.steps.map((s) => s.id);
   const p = S.partByRef.get(c);
   return p ? p.steps.map((s) => s.id) : [];
 }
@@ -314,9 +339,17 @@ function readFilters() {
 function compute() {
   const f = readFilters();
   const tokens = norm(f.q).split(/\s+/).filter(Boolean);
-  // Mã công đoạn dạng ...-S01: lọc đúng bước đó. QR phiếu (part_ref) tìm như chữ thường.
-  const stepToks = tokens.filter((t) => /-s\d+$/.test(t));
-  const textToks = tokens.map((t) => (/-s\d+$/.test(t) ? t.replace(/-s\d+$/, '') : t));
+  // QR phiếu (part_ref-Tổ): lọc các công đoạn của phiếu đó; mã công đoạn ...-S01: lọc đúng bước đó
+  const stepToks = tokens.flatMap((t) => {
+    const g = S.segByCode.get(t);
+    if (g) return g.steps.map((s) => s.idn);
+    return /-s\d+$/.test(t) ? [t] : [];
+  });
+  const textToks = tokens.map((t) => {
+    const g = S.segByCode.get(t);
+    if (g) return norm(g.part.ref);
+    return /-s\d+$/.test(t) ? t.replace(/-s\d+$/, '') : t;
+  });
   const sig = JSON.stringify(f);
   if (sig !== S.filterSig) { S.expand.clear(); S.filterSig = sig; }
   S.filtering = Boolean(tokens.length || f.product || f.kind || f.group || f.stage || f.status);
@@ -537,9 +570,10 @@ function qrSvg(text) {
 function segFlow(g) {
   const p = g.part, a = g.steps[0], b = g.steps[g.steps.length - 1];
   const before = p.steps[a.idx - 1], after = p.steps[b.idx + 1];
-  const from = before ? `tổ ${esc(before.group)} (${esc(before.stage)})` : p.kind === 'CUM' || p.kind === 'SP' ? 'ráp từ chi tiết/cụm' : 'kho gỗ';
+  const tn = (s) => esc(s.seg.teamName || 'Tổ ' + s.group); // tên tổ theo sheet To
+  const from = before ? `${tn(before)} (${esc(before.stage)})` : p.kind === 'CUM' || p.kind === 'SP' ? 'ráp từ chi tiết/cụm' : 'kho gỗ';
   let to;
-  if (after) to = `tổ ${esc(after.group)} (${esc(after.stage)})`;
+  if (after) to = `${tn(after)} (${esc(after.stage)})`;
   else {
     const par = p.parent; // cụm cha hoặc SP (production.js → linkParts)
     to = par ? `ráp vào ${esc(par.kind === 'SP' ? 'thành phẩm' : par.name)}` : 'Kết thúc';
@@ -549,7 +583,7 @@ function segFlow(g) {
 
 function phieuHTML({ g, k, n }) {
   const p = g.part, d = p.det, mo = d.mo;
-  const team = g.group || g.steps[0].stage; // tên tổ = nhóm công đoạn (Sơ chế, Tinh chế, Lắp ráp, Dầu, Đóng gói)
+  const team = g.teamName || g.group; // tên tổ theo sheet To (VD "Tổ Dầu màu")
   const lsx = `${mo.no}${d.stt ? ' – Dòng ' + d.stt : ''}`;
   const cum = p.kind === 'SP' ? '—' : p.kind === 'CT rời' ? 'Chi tiết rời' : p.cumName;
   const qtyReq = Math.max(...g.steps.map((s) => s.qtyReq));
@@ -564,7 +598,7 @@ function phieuHTML({ g, k, n }) {
       <tbody>${'<tr><td></td><td></td><td></td><td></td></tr>'.repeat(nRows)}</tbody>
     </table>`;
   return `<div class="phieu">
-    <div class="ph-title">PHIẾU PALLET TỔ ${esc(team.toUpperCase())}</div>
+    <div class="ph-title">PHIẾU PALLET ${esc((/^tổ\s/i.test(team) ? team : 'Tổ ' + team).toUpperCase())}</div>
     <div class="ph-head">
       <div class="ph-logo"><img src="assets/logo.png" alt=""></div>
       <table class="ph-info">
@@ -576,7 +610,7 @@ function phieuHTML({ g, k, n }) {
         <tr><th>Mã lô gỗ:</th><td class="fill"></td><th>Pallet số:</th><td class="${n > 1 ? 'big' : 'fill'}">${n > 1 ? `${k} / ${n}` : ''}</td></tr>
         <tr><th>Mã lô dầu:</th><td class="fill"></td><th>Hạn giao:</th><td>${d.due ? fmtDate(d.due) : ''}</td></tr>
       </table>
-      <div class="ph-qr">${qrSvg(p.ref)}<div class="ph-id">${esc(p.ref)}</div></div>
+      <div class="ph-qr">${qrSvg(g.code)}<div class="ph-id">${esc(g.code)}</div></div>
     </div>
     <div class="ph-cert"><span class="ph-flow">${segFlow(g)}</span><b>${esc(certOf(d.wood))}</b></div>
     <div class="ph-cks-l">Công đoạn tại tổ (${g.steps.length}) – tô/đánh dấu khi hoàn thành:</div>

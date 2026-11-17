@@ -2,7 +2,7 @@
 
 Web nội bộ cho bộ phận thống kê: xem lệnh sản xuất (LSX) đang chạy theo cây
 **LSX → dòng sản phẩm → cụm → chi tiết → công đoạn**, tìm kiếm/lọc, và in phiếu pallet
-(mẫu: [docs/mau/phieu-pallet-mau.png](docs/mau/phieu-pallet-mau.png)) có **QR = part_ref** (mã chi tiết/cụm/SP trong LSX), 1 phiếu cho mỗi tổ chi tiết đi qua.
+(mẫu: [docs/mau/phieu-pallet-mau.png](docs/mau/phieu-pallet-mau.png)) có **QR = part_ref + team_id** (VD `…-W004-T-TC`), 1 phiếu cho mỗi tổ chi tiết đi qua.
 
 Nguồn dữ liệu: Google Sheet `1VVW7Zrdw-KmO2HLIh1nchKE8DRGWDtd2hCrS-e_aKUU`, gồm các tab
 MO Routing, MO, MO Detail, Product, BOM Wood, Pallet Log.
@@ -70,7 +70,6 @@ Quyền: `report`, `phieu`, `audit`. Ẩn tab chỉ là giao diện – API ghi 
 
 | Trên phiếu | Nguồn |
 |---|---|
-| PHIẾU PALLET TỔ {…} | tên tổ = `MO Routing.stage_group` (Sơ chế, Tinh chế, Lắp ráp, Dầu, Đóng gói) |
 | Công đoạn tại tổ | các bước liên tiếp cùng `stage_group` của chi tiết: `step_no`, `stage` + ô đánh dấu |
 | Pallet số | in n pallet/phiếu → tự đánh 1/n … n/n; in 1 bản → để trống ghi tay |
 | Lệnh sản xuất | `MO.mo_no` + `MO Detail.lsx_stt` |
@@ -82,7 +81,8 @@ Quyền: `report`, `phieu`, `audit`. Ẩn tab chỉ là giao diện – API ghi 
 | SL/Pcs · SL Tổng | `qty_per_unit` · `qty_required` |
 | FSC 100% / NON FSC | suy ra từ `Product.wood_type` |
 | Mã lô gỗ, Mã lô dầu, bảng ghi nhận | để trống, ghi tay |
-| QR + mã in dưới QR | `part_ref` (chung cho mọi phiếu tổ của chi tiết đó). Quét vào ô tìm kiếm + Enter → mở các phiếu của chi tiết |
+| QR + mã in dưới QR | `part_ref` + `-` + `To.team_id`, VD `LSX-02-1626-01-W004-T-TC`. Quét vào ô tìm kiếm + Enter → mở đúng phiếu đó |
+| PHIẾU PALLET {TỔ …} | `To.team_name`. Tổ của phiếu: gom các bước liên tiếp cùng `MO Routing.stage_group`, tra `team_id` qua `Works List` (`work_name` = `stage`), lấy tổ chiếm đa số trong phiếu |
 | Nhận từ · Giao tới, Hạn giao | công đoạn trước / sau phiếu (hoặc cụm/SP sẽ ráp vào), `MO Detail.due_date` |
 
 ## Chạy thử trên máy
