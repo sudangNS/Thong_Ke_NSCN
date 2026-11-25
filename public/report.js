@@ -1,6 +1,6 @@
 /* Báo cáo sản lượng – Tổng xưởng 1 (Nghĩa Sơn Chi Nhánh) & 5 tổ.
  *  Màn hình chính: tổng xưởng + 5 thẻ tổ. Bấm thẻ → chi tiết (theo công đoạn, theo ngày, theo LSX/SP).
- *  Sản lượng tổ = số lượng ra khỏi tổ (xong bước cuối của tổ trên từng chi tiết/cụm/SP).
+ *  Sản lượng tổ = số lượng tổ THỰC BÁO xong ở công đoạn cuối của tổ trên từng chi tiết/cụm/SP (không cộng phần suy ra).
  *  Tổng xưởng = thành phẩm xong Đóng gói. m³ quy đổi theo BOM Wood. */
 'use strict';
 
@@ -82,11 +82,11 @@ function summarize(rows) {
     let G = groups.get(st.group);
     if (!G) groups.set(st.group, (G = { out: blank(), all: blank(), stages: new Map() }));
     addTo(G.all, st, e, r, k); G.all.ng += ng;
-    if (st.exit) addTo(G.out, st, e);
+    if (st.exit) addTo(G.out, st, r); // sản lượng tổ = số THỰC BÁO xong ở công đoạn cuối của tổ (không cộng phần suy ra)
     let s = G.stages.get(st.stage);
     if (!s) G.stages.set(st.stage, (s = blank()));
     addTo(s, st, e, r, k); s.ng += ng;
-    if (isFinal(st)) addTo(xuong, st, e, r);
+    if (isFinal(st)) addTo(xuong, st, r, r);
     n += k;
   }
   return { groups, xuong, n };
@@ -101,7 +101,7 @@ const series = (buckets, group, pick) => buckets.map((b) => {
  * Ví dụ kỳ 10–20 nhưng chỉ 5 ngày có ghi nhận → chia 5. */
 function daysWith(rows, pred) {
   const s = new Set();
-  for (const r of rows) if (r.e > 1e-9 && pred(r.st)) s.add(r.day);
+  for (const r of rows) if (r.r > 1e-9 && pred(r.st)) s.add(r.day);
   return s.size;
 }
 const outOf = (g) => (st) => st.group === g && st.exit;
@@ -251,7 +251,7 @@ function renderOverview() {
   const teams = REPORT_GROUPS.map((g) => {
     const G = sm.groups.get(g);
     const top = [...G.stages].sort((a, b) => stageOrder(a[0], b[0])).map(([s, v]) =>
-      `<li><span>${esc(s)}</span><b>${fmtQ(v.e)}</b></li>`).join('');
+      `<li><span>${esc(s)}</span><b>${fmtQ(v.r)}</b></li>`).join('');
     return `<div class="team" role="button" tabindex="0" data-go="${esc(g)}">
       <header><h3>Tổ ${esc(teamName(g))}</h3><span class="go">Chi tiết ›</span></header>
       <div class="team-m3">${fmtM3(G.out.m3)}<small> m³</small></div>
@@ -287,10 +287,10 @@ function renderOverview() {
 
 function note() {
   return `<details class="rp-note"><summary>Cách tính sản lượng</summary><ul>
-    <li><b>Sản lượng tổ</b> = số chi tiết / cụm / SP <b>ra khỏi tổ</b>, lấy tại <b>công đoạn cuối cùng của tổ</b> trong quy trình công đoạn (MO Routing) của từng chi tiết. Tổ của công đoạn tra theo tab <b>Works List</b> (team_id) → <b>To</b>; VD Sơ chế ra tổ ở Bào 4 mặt, Tinh chế ở công đoạn cuối trước khi giao Lắp ráp/Dầu. Danh sách công đoạn trong thẻ là số lượt qua từng công đoạn.</li>
+    <li><b>Sản lượng tổ</b> = số chi tiết / cụm / SP <b>ra khỏi tổ</b>, lấy tại <b>công đoạn cuối cùng của tổ</b> trong quy trình công đoạn (MO Routing) của từng chi tiết. Tổ của công đoạn tra theo tab <b>Works List</b> (team_id) → <b>To</b>; VD Sơ chế ra tổ ở Bào 4 mặt, Tinh chế ở công đoạn cuối trước khi giao Lắp ráp/Dầu. Chỉ tính số <b>tổ thực báo hoàn thành</b> ở công đoạn cuối đó (Pallet Log), <b>không</b> cộng phần suy ra từ tổ sau. Danh sách công đoạn trong thẻ là số tổ đã báo ở từng công đoạn.</li>
     <li><b>Tổng xưởng</b> = thành phẩm xong <b>Đóng gói</b>.</li>
     <li><b>Trung bình / ngày</b> (khi xem tuần, tháng, tuỳ chỉnh) = tổng sản lượng kỳ ÷ <b>số ngày có số liệu</b> của tổ/xưởng đó (ngày không ghi nhận không tính). Ví dụ kỳ 10–20 chỉ có 5 ngày có số liệu → chia 5.</li>
-    <li><b>Bỏ qua công đoạn</b>: công đoạn sau đã có số thì công đoạn trước được tính hoàn thành bằng số đó (gán vào ngày báo công đoạn sau). Cụm đã ráp → chi tiết của cụm tính đã xong; SP đã ráp → cụm và chi tiết rời tính đã xong.</li>
+    <li><b>Bỏ qua công đoạn</b> (chỉ dùng cho cột "Suy ra", hàng tồn và đồng bộ – <b>không</b> dùng cho sản lượng tổ): công đoạn sau đã có số thì công đoạn trước được tính hoàn thành bằng số đó. Cụm đã ráp → chi tiết của cụm tính đã xong; SP đã ráp → cụm và chi tiết rời tính đã xong.</li>
     <li><b>m³</b> quy đổi theo BOM Wood (${RP.m3 === 'r' ? 'm³ phôi sơ chế – cột m3_rough' : 'm³ tinh – cột m3_finish'}); cụm/SP = tổng gỗ các chi tiết bên trong. Gỗ đi qua nhiều tổ nên <b>không cộng m³ các tổ với nhau</b>.</li>
     <li><b>Tồn trên chuyền</b> (tính đến hết ngày cuối kỳ) = hàng tổ trước đã giao qua (đã báo xong công đoạn trước) − hàng tổ đã giao đi. Gồm: <i>chờ làm</i> (đã giao tới, chưa làm), <i>đang làm dở</i> (giữa 2 công đoạn trong tổ), <i>chờ ráp</i> (chi tiết/cụm đã xong, chưa được ráp; trừ phần đã ráp × SL chi tiết/cụm). Mỗi món chỉ nằm ở 1 tổ nên m³ tồn <b>cộng được</b>. Gỗ chưa vào Cắt thô và SP đã đóng gói không tính. Tuổi tồn tính theo nhập trước – ra trước; tô vàng khi ≥ ${WIP_WARN_DAYS} ngày.</li>
     <li>Nguồn: tab <b>Pallet Log</b> (ngày = work_date). Dữ liệu ghi nhận ${P.minDay ? `từ ${fmtD(P.minDay)} đến ${fmtD(P.maxDay)}` : 'chưa có'}.</li>
@@ -350,15 +350,15 @@ function renderTeam(g) {
 
 function detTable(rows, g) {
   const dets = new Map();
-  for (const { st, e } of rows) {
+  for (const { st, e, r } of rows) {
     const det = st.part.det;
     let D = dets.get(det.id);
     if (!D) dets.set(det.id, (D = { det, out: blank(), parts: new Map(), stages: new Set() }));
-    if (st.exit) addTo(D.out, st, e);
+    if (st.exit) addTo(D.out, st, r);
     let Pp = D.parts.get(st.part.ref);
     if (!Pp) D.parts.set(st.part.ref, (Pp = { p: st.part, st: new Map(), m3: 0 }));
     Pp.st.set(st.stage, (Pp.st.get(st.stage) || 0) + e);
-    if (st.exit) Pp.m3 += e * m3Of(st.part);
+    if (st.exit) Pp.m3 += r * m3Of(st.part);
     D.stages.add(st.stage);
   }
   if (!dets.size) return '<p class="muted">Chưa có ghi nhận trong kỳ.</p>';
@@ -388,12 +388,12 @@ function renderXuong() {
   const bk = rpBuckets();
   const sm = summarize(rows);
   const dets = new Map();
-  for (const { st, e } of rows) {
+  for (const { st, r } of rows) {
     const det = st.part.det;
     let D = dets.get(det.id);
     if (!D) dets.set(det.id, (D = { det, g: new Map(), x: blank() }));
-    if (st.exit) D.g.set(st.group, (D.g.get(st.group) || 0) + e * m3Of(st.part));
-    if (isFinal(st)) addTo(D.x, st, e);
+    if (st.exit) D.g.set(st.group, (D.g.get(st.group) || 0) + r * m3Of(st.part));
+    if (isFinal(st)) addTo(D.x, st, r);
   }
   const list = [...dets.values()].sort((a, b) => a.det.mo.no.localeCompare(b.det.mo.no, 'vi', { numeric: true }) || num(a.det.stt) - num(b.det.stt));
   const x = sm.xuong;
