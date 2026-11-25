@@ -330,8 +330,9 @@ body[data-tab="kiem-tra"] #app [data-tab]:not([data-tab="kiem-tra"]) { display: 
 .bc i { display: block; width: min(70%, 22px); background: #b9d0ae; border-radius: 4px 4px 0 0; }
 .bc.sel i { background: var(--green); }
 .bc:hover i { background: var(--green-dark); }
-.bc span { position: absolute; bottom: -16px; font-size: 9.5px; color: var(--muted); white-space: nowrap; }
-.bars { margin-bottom: 16px; }
+/* Nhãn ngày xoay dọc (đọc từ dưới lên) để không chồng chữ khi nhiều cột */
+.bc span { position: absolute; top: 100%; margin-top: 3px; font-size: 9.5px; line-height: 1; color: var(--muted); white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); }
+.bars { margin-bottom: 34px; }
 .bars-empty { height: 74px; display: grid; place-items: center; font-size: 12px; color: var(--muted); background: #f6f8f4; border-radius: 6px; }
 .bars-empty.tall { height: 150px; }
 .tip {

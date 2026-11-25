@@ -213,6 +213,7 @@ function build(d) {
   S.teams = new Map((d.to || []).map((t) => [String(t.team_id || '').trim(), String(t.team_name || '').trim()]));
   for (const p of parts.values()) {
     p.steps.sort((a, b) => a.no - b.no);
+    for (const s of p.steps) s.group = stepGroup(s.stage, s.group);
     buildSegs(p);
     const cum = p.kind === 'CUM' ? p : parts.get(p.cumRef);
     p.cumName = p.kind === 'SP' || p.kind === 'CT rời' ? '' : (cum ? cum.name : '');
@@ -231,6 +232,20 @@ function build(d) {
     }
   }
   S.steps = steps;
+}
+
+/* Tổ của 1 công đoạn theo dữ liệu gốc: Works List (work_name → team_id) → To (team_name),
+ * quy về tên nhóm chuẩn trong GROUP_ORDER (VD "Tổ Dầu màu" → "Dầu").
+ * Ưu tiên hơn MO Routing.stage_group vì cột này có thể chưa cập nhật khi đổi tổ
+ * (VD Bào 4 mặt đã chuyển từ Tinh chế sang Sơ chế). Không tra được → giữ stage_group. */
+function stepGroup(stage, fallback) {
+  const team = S.teams.get(S.workTeam.get(String(stage || '').trim()) || '');
+  if (team) {
+    const n = norm(team);
+    const g = GROUP_ORDER.find((x) => n.includes(norm(x)));
+    if (g) return g;
+  }
+  return fallback;
 }
 
 /* Phiếu pallet theo TỔ: 1 chi tiết/cụm/SP mang 1 phiếu suốt các công đoạn liên tiếp cùng tổ.

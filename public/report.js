@@ -122,7 +122,7 @@ function kpi(label, value, unit, sub = '') {
 function bars(buckets, values, { unit = 'm³', f = fmtM3, tall = false } = {}) {
   const max = Math.max(0, ...values);
   if (!max) return `<div class="bars-empty ${tall ? 'tall' : ''}">Chưa có ghi nhận trong kỳ</div>`;
-  const step = buckets.length > 20 ? Math.ceil(buckets.length / 10) : 1;
+  const step = buckets.length > 31 ? Math.ceil(buckets.length / 16) : 1; // nhãn xoay dọc nên hiện được nhiều hơn
   const cols = buckets.map((b, i) => {
     const h = values[i] > 0 ? Math.max(2, (values[i] / max) * 100) : 0;
     return `<div class="bc ${b.sel ? 'sel' : ''}" data-tip="${esc(`${b.tip}: ${f(values[i])} ${unit}`)}">
@@ -287,7 +287,7 @@ function renderOverview() {
 
 function note() {
   return `<details class="rp-note"><summary>Cách tính sản lượng</summary><ul>
-    <li><b>Sản lượng tổ</b> = số chi tiết / cụm / SP <b>ra khỏi tổ</b> (xong bước cuối thuộc tổ đó trên từng chi tiết). Danh sách công đoạn trong thẻ là số lượt qua từng công đoạn.</li>
+    <li><b>Sản lượng tổ</b> = số chi tiết / cụm / SP <b>ra khỏi tổ</b>, lấy tại <b>công đoạn cuối cùng của tổ</b> trong quy trình công đoạn (MO Routing) của từng chi tiết. Tổ của công đoạn tra theo tab <b>Works List</b> (team_id) → <b>To</b>; VD Sơ chế ra tổ ở Bào 4 mặt, Tinh chế ở công đoạn cuối trước khi giao Lắp ráp/Dầu. Danh sách công đoạn trong thẻ là số lượt qua từng công đoạn.</li>
     <li><b>Tổng xưởng</b> = thành phẩm xong <b>Đóng gói</b>.</li>
     <li><b>Trung bình / ngày</b> (khi xem tuần, tháng, tuỳ chỉnh) = tổng sản lượng kỳ ÷ <b>số ngày có số liệu</b> của tổ/xưởng đó (ngày không ghi nhận không tính). Ví dụ kỳ 10–20 chỉ có 5 ngày có số liệu → chia 5.</li>
     <li><b>Bỏ qua công đoạn</b>: công đoạn sau đã có số thì công đoạn trước được tính hoàn thành bằng số đó (gán vào ngày báo công đoạn sau). Cụm đã ráp → chi tiết của cụm tính đã xong; SP đã ráp → cụm và chi tiết rời tính đã xong.</li>

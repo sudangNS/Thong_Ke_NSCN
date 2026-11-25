@@ -52,10 +52,15 @@ function linkParts() {
       if (p.parent) p.parent.children.push(p);
       p.ratio = p.parent ? p.qtyPer / (p.parent.qtyPer || 1) : 0;
       let start = 0;
+      // Bước "ra tổ" = công đoạn CUỐI CÙNG của tổ trong quy trình (MO Routing, theo step_no) của chi tiết/cụm/SP này.
+      // Tổ của công đoạn lấy theo Works List → To (xem stepGroup trong app.js). Nếu quy trình quay lại cùng tổ
+      // thì chỉ tính lần cuối, tránh đếm 2 lần.
+      const lastIdx = new Map();
+      p.steps.forEach((s, i) => lastIdx.set(s.group, i));
       p.steps.forEach((s, i) => {
         s.idx = i;
         if (i > 0 && p.steps[i - 1].group !== s.group) start = i;
-        s.exit = i === p.steps.length - 1 || p.steps[i + 1].group !== s.group; // bước cuối của tổ trên chi tiết này
+        s.exit = lastIdx.get(s.group) === i;
         const a = segPos.get(s.stage) || [0, 0];
         a[0] += i - start; a[1]++;
         segPos.set(s.stage, a);
